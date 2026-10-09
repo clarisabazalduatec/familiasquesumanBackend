@@ -1,12 +1,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -31,3 +30,5 @@ class MensajeChat(Base):
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     usuario: Mapped["Usuario"] = relationship(back_populates="mensajes")
+
+    __table_args__ = (Index("ix_mensajes_chat_usuario_creado", "usuario_id", "creado_en"),)
