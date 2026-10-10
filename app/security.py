@@ -14,6 +14,7 @@ from app.models import Usuario
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme_opcional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
 def hashear_password(password: str) -> str:
@@ -52,3 +53,20 @@ async def obtener_usuario_actual(
     if usuario is None:
         raise credenciales_invalidas
     return usuario
+
+async def obtener_usuario_opcional(
+    token: str | None = Depends(oauth2_scheme_opcional),
+    db: AsyncSession = Depends(get_db),
+) -> Usuario | None:
+    if token is None:
+        return None
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        usuario_id = payload.get("sub")
+        if usuario_id is None:
+            return None
+    except JWTError:
+        return None
+
+    resultado = await db.execute(select(Usuario).where(Usuario.id == uuid.UUID(usuario_id)))
+    return resultado.scalar_one_or_none()

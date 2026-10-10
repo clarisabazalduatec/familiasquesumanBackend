@@ -24,7 +24,7 @@ class MensajeChat(Base):
     __tablename__ = "mensajes_chat"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    usuario_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     rol: Mapped[str] = mapped_column(String(20), nullable=False)  # "usuario" o "asistente"
     contenido: Mapped[str] = mapped_column(Text, nullable=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
