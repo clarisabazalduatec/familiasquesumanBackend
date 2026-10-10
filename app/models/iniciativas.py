@@ -81,6 +81,11 @@ class Actividad(Iniciativa):
 
     categoria: Mapped[Categoria] = relationship(lazy="selectin")
 
+    @property
+    def plazas_disponibles(self) -> int:
+        # TODO (fase de participaciones): cupo_total - asistentes confirmados
+        return self.cupo_total
+
     __table_args__ = (
         CheckConstraint("cupo_total > 0", name="ck_actividades_cupo_positivo"),
         CheckConstraint("termina_en > inicia_en", name="ck_actividades_fechas"),
@@ -108,6 +113,12 @@ class Proyecto(Iniciativa):
         cascade="all, delete-orphan", order_by="ProyectoOpcionApoyo.id", lazy="selectin"
     )
 
+    @property
+    def logo(self) -> str | None:
+        if self.logo_url:
+            return self.logo_url
+        return self.imagenes[0].url if self.imagenes else None
+
     __mapper_args__ = {"polymorphic_identity": TipoIniciativa.PROYECTO}
 
 
@@ -134,6 +145,22 @@ class Donacion(Iniciativa):
     etiquetas: Mapped[list["DonacionEtiqueta"]] = relationship(
         cascade="all, delete-orphan", order_by="DonacionEtiqueta.id", lazy="selectin"
     )
+
+    @property
+    def recaudado(self) -> float:
+        # TODO (fase de apoyos): SUM de los aportes registrados
+        return 0.0
+
+    @property
+    def opciones_disponibles(self) -> int:
+        return len(self.opciones)
+
+    @property
+    def etiquetas_agrupadas(self) -> dict[str, list[str]]:
+        grupos: dict[str, list[str]] = {g.value.lower(): [] for g in GrupoEtiqueta}
+        for e in self.etiquetas:
+            grupos[e.grupo.value.lower()].append(e.valor)
+        return grupos
 
     __table_args__ = (
         CheckConstraint("meta IS NULL OR meta >= 0", name="ck_donaciones_meta_no_negativa"),
