@@ -4,10 +4,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: familias_user
-      POSTGRES_PASSWORD: familias_pass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-familias_pass}
       POSTGRES_DB: familias_que_suman
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +20,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -30,6 +28,13 @@ services:
       - ./app:/code/app
       - ./alembic:/code/alembic
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://api:8000
+    depends_on:
+      - api
 
 volumes:
   postgres_data:
