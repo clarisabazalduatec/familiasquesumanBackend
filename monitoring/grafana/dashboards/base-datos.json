@@ -1,0 +1,17 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}, "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0}, "id": 1, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum(rate(container_cpu_usage_seconds_total{name=~\".*db.*\", image!=\"\"}[5m]))", "legendFormat": "Postgres CPU", "refId": "A"}], "title": "CPU de Postgres", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []}, "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0}, "id": 2, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "container_memory_working_set_bytes{name=~\".*db.*\", image!=\"\"}", "legendFormat": "Postgres", "refId": "A"}], "title": "Memoria de Postgres", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []}, "gridPos": {"h": 9, "w": 24, "x": 0, "y": 9}, "id": 3, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum(rate(container_network_receive_bytes_total{name=~\".*db.*\"}[5m]))", "legendFormat": "Postgres receive", "refId": "A"}], "title": "Red de Postgres", "type": "timeseries"}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["familias-que-suman", "database"],
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Base de datos",
+  "uid": "fqs-base-datos",
+  "version": 1
+}

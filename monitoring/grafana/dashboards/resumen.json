@@ -1,0 +1,17 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "id": 1, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "up", "legendFormat": "{{job}} / {{instance}}", "refId": "A"}], "title": "Estado de targets", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "id": 2, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum(rate(http_requests_total[5m]))", "legendFormat": "API requests/sec", "refId": "A"}], "title": "Tráfico API", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}, "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}, "id": 3, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum(rate(http_server_errors_total[5m])) by (route)", "legendFormat": "{{route}}", "refId": "A"}], "title": "Errores 5xx por ruta", "type": "timeseries"}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["familias-que-suman", "overview"],
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Resumen",
+  "uid": "fqs-resumen",
+  "version": 1
+}

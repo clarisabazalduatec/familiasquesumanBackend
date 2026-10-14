@@ -1,0 +1,17 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}, "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0}, "id": 1, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\".+\", image!=\"\"}[5m]))", "legendFormat": "{{name}}", "refId": "A"}], "title": "CPU por contenedor", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []}, "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0}, "id": 2, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "container_memory_working_set_bytes{name=~\".+\", image!=\"\"}", "legendFormat": "{{name}}", "refId": "A"}], "title": "Memoria por contenedor", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []}, "gridPos": {"h": 9, "w": 24, "x": 0, "y": 9}, "id": 3, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum by (name) (rate(container_network_receive_bytes_total{name=~\".+\"}[5m]))", "legendFormat": "{{name}}", "refId": "A"}], "title": "Tráfico de red recibido", "type": "timeseries"}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["familias-que-suman", "containers"],
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Contenedores",
+  "uid": "fqs-contenedores",
+  "version": 1
+}
