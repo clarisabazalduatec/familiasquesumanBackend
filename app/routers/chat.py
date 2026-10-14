@@ -1,4 +1,5 @@
 import google.generativeai as genai
+from time import perf_counter
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,7 @@ from app.database import get_db
 from app.models import MensajeChat, Usuario
 from app.schemas import ChatMensajeEntrada, ChatMensajeRespuesta
 from app.security import obtener_usuario_actual
+from app.metrics import CHATBOT_REQUESTS, CHATBOT_REQUEST_DURATION
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -62,8 +64,16 @@ async def enviar_mensaje(
         ]
 
     chat = modelo_gemini.start_chat(history=historial_gemini)
-    respuesta_gemini = chat.send_message(entrada.mensaje)
-    texto_respuesta = respuesta_gemini.text
+    inicio = perf_counter()
+    try:
+        respuesta_gemini = chat.send_message(entrada.mensaje)
+        texto_respuesta = respuesta_gemini.text
+    except Exception:
+        CHATBOT_REQUESTS.labels("failure").inc()
+        CHATBOT_REQUEST_DURATION.observe(perf_counter() - inicio)
+        raise
+    CHATBOT_REQUESTS.labels("success").inc()
+    CHATBOT_REQUEST_DURATION.observe(perf_counter() - inicio)
 
     if usuario is not None:
         db.add(MensajeChat(usuario_id=usuario.id, rol="usuario", contenido=entrada.mensaje))

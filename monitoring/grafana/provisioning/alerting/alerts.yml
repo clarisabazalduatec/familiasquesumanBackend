@@ -1,0 +1,98 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: monitoreo-backend
+    folder: Alertas
+    interval: 1m
+    rules:
+      - uid: target-down
+        title: Target de monitoreo caído
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model: {datasource: {type: prometheus, uid: prometheus}, editorMode: code, expr: "up == 0", instant: true, refId: A}
+          - refId: B
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model: {conditions: [{evaluator: {params: [0], type: gt}, operator: {type: and}, query: {params: [A]}, reducer: {type: last, params: []}, type: query}], datasource: {type: __expr__, uid: __expr__}, expression: A, reducer: last, refId: B, type: reduce}
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations: {summary: "Un target scrapeado por Prometheus no responde."}
+        labels: {severity: critical}
+        isPaused: false
+      - uid: api-5xx-rate
+        title: Tasa alta de errores 5xx
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model: {datasource: {type: prometheus, uid: prometheus}, editorMode: code, expr: "sum(rate(http_server_errors_total[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1)", instant: true, refId: A}
+          - refId: B
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model: {conditions: [{evaluator: {params: [0.05], type: gt}, operator: {type: and}, query: {params: [A]}, reducer: {type: last, params: []}, type: query}], datasource: {type: __expr__, uid: __expr__}, expression: A, reducer: last, refId: B, type: reduce}
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations: {summary: "La proporción de respuestas 5xx supera el 5%."}
+        labels: {severity: warning}
+        isPaused: false
+      - uid: api-p95-latency
+        title: Latencia p95 alta
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model: {datasource: {type: prometheus, uid: prometheus}, editorMode: code, expr: "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", instant: true, refId: A}
+          - refId: B
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model: {conditions: [{evaluator: {params: [1.5], type: gt}, operator: {type: and}, query: {params: [A]}, reducer: {type: last, params: []}, type: query}], datasource: {type: __expr__, uid: __expr__}, expression: A, reducer: last, refId: B, type: reduce}
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations: {summary: "La latencia p95 global de la API supera 1.5 segundos."}
+        labels: {severity: warning}
+        isPaused: false
+      - uid: chatbot-failures
+        title: Fallos de Gemini
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model: {datasource: {type: prometheus, uid: prometheus}, editorMode: code, expr: "sum(rate(chatbot_requests_total{outcome=\"failure\"}[5m]))", instant: true, refId: A}
+          - refId: B
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model: {conditions: [{evaluator: {params: [0], type: gt}, operator: {type: and}, query: {params: [A]}, reducer: {type: last, params: []}, type: query}], datasource: {type: __expr__, uid: __expr__}, expression: A, reducer: last, refId: B, type: reduce}
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations: {summary: "Se están registrando fallos en las llamadas al chatbot."}
+        labels: {severity: warning}
+        isPaused: false
+      - uid: container-restarts
+        title: Reinicios frecuentes de contenedor
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 900, to: 0}
+            datasourceUid: prometheus
+            model: {datasource: {type: prometheus, uid: prometheus}, editorMode: code, expr: "changes(container_start_time_seconds{name=~\".+\"}[15m]) > 1", instant: true, refId: A}
+          - refId: B
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model: {conditions: [{evaluator: {params: [0], type: gt}, operator: {type: and}, query: {params: [A]}, reducer: {type: last, params: []}, type: query}], datasource: {type: __expr__, uid: __expr__}, expression: A, reducer: last, refId: B, type: reduce}
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations: {summary: "Un contenedor se reinició más de una vez en 15 minutos."}
+        labels: {severity: warning}
+        isPaused: false

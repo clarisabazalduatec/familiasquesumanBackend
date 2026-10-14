@@ -1,0 +1,19 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "id": 1, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum(rate(http_requests_total[5m])) by (route, method)", "legendFormat": "{{method}} {{route}}", "refId": "A"}], "title": "Peticiones por segundo", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "id": 2, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))", "legendFormat": "{{route}}", "refId": "A"}], "title": "Latencia p95 por endpoint", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}, "id": 3, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum(rate(chatbot_requests_total[5m])) by (outcome)", "legendFormat": "{{outcome}}", "refId": "A"}], "title": "Llamadas a Gemini", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}, "id": 4, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "histogram_quantile(0.95, rate(chatbot_request_duration_seconds_bucket[5m]))", "legendFormat": "Gemini p95", "refId": "A"}], "title": "Latencia de Gemini p95", "type": "timeseries"},
+    {"datasource": {"type": "prometheus", "uid": "prometheus"}, "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}, "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}, "id": 5, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}, "targets": [{"editorMode": "code", "expr": "sum by (action, outcome) (auth_events_total)", "legendFormat": "{{action}} / {{outcome}}", "refId": "A"}], "title": "Registro e inicios de sesión", "type": "timeseries"}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["familias-que-suman", "api"],
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "API",
+  "uid": "fqs-api",
+  "version": 1
+}

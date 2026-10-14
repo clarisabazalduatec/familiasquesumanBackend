@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import Usuario
 from app.schemas import UsuarioCrear, UsuarioLogin, TokenRespuesta
 from app.security import hashear_password, verificar_password, crear_access_token
+from app.metrics import AUTH_EVENTS
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def registrar_usuario(datos: UsuarioCrear, db: AsyncSession = Depends(get_db)):
     resultado = await db.execute(select(Usuario).where(Usuario.email == datos.email))
     if resultado.scalar_one_or_none() is not None:
+        AUTH_EVENTS.labels("register", "failure").inc()
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo")
 
     usuario = Usuario(
@@ -28,6 +30,7 @@ async def registrar_usuario(datos: UsuarioCrear, db: AsyncSession = Depends(get_
     await db.refresh(usuario)
 
     token = crear_access_token(usuario.id)
+    AUTH_EVENTS.labels("register", "success").inc()
     return TokenRespuesta(access_token=token, usuario=usuario)
 
 
@@ -37,9 +40,11 @@ async def iniciar_sesion(datos: UsuarioLogin, db: AsyncSession = Depends(get_db)
     usuario = resultado.scalar_one_or_none()
 
     if usuario is None or not verificar_password(datos.password, usuario.password_hash):
+        AUTH_EVENTS.labels("login", "failure").inc()
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
 
     token = crear_access_token(usuario.id)
+    AUTH_EVENTS.labels("login", "success").inc()
     return TokenRespuesta(access_token=token, usuario=usuario)
 
 @router.post("/token", include_in_schema=False)
@@ -51,5 +56,7 @@ async def token_para_swagger(
     resultado = await db.execute(select(Usuario).where(Usuario.email == form.username))
     usuario = resultado.scalar_one_or_none()
     if usuario is None or not verificar_password(form.password, usuario.password_hash):
+        AUTH_EVENTS.labels("token", "failure").inc()
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
+    AUTH_EVENTS.labels("token", "success").inc()
     return {"access_token": crear_access_token(usuario.id), "token_type": "bearer"}

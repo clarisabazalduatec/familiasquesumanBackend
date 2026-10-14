@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Familias que Suman
+    orgId: 1
+    folder: Familias que Suman
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
