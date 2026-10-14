@@ -149,12 +149,17 @@ class CentroDetalle(CentroResumen):
     recomendaciones: str | None = None
     telefono: str | None = None
     whatsapp: str | None = None
+    mapa_url: str | None = None
 
     @field_validator("necesidades", mode="before")
     @classmethod
     def _solo_texto(cls, v):
         return [n.descripcion if hasattr(n, "descripcion") else n for n in v]
 
+
+class CentroAdmin(CentroDetalle):
+    """Lo que ve el panel de admin: incluye los centros desactivados."""
+    activo: bool
 
 
 # ---------- Entrada del admin ----------
@@ -197,3 +202,52 @@ class ProyectoGuardar(BaseModel):
             v = v.strip()
             return v or None
         return v
+
+
+
+class CentroGuardar(BaseModel):
+    """Crear (POST) o reemplazar (PUT) un centro del directorio desde el formulario de admin.
+
+    nombre = título; informacion_general = descripción larga; direccion = texto que se muestra;
+    mapa_url = link que abre "Cómo llegar". activo=False lo oculta del directorio sin borrarlo.
+    """
+
+    tipo: TipoCentro = TipoCentro.ASILO
+    nombre: str = Field(min_length=1, max_length=200)
+    descripcion_corta: str = Field(min_length=1, max_length=300)
+    informacion_general: str = Field(min_length=1)
+    direccion: str = Field(min_length=1, max_length=250)
+    mapa_url: str | None = Field(default=None, max_length=500)
+    ciudad_id: int | None = None  # None = Monterrey
+    logo_url: str | None = Field(default=None, max_length=500)
+    como_ayudar: str | None = None
+    recomendaciones: str | None = None
+    telefono: str | None = Field(default=None, max_length=20)
+    whatsapp: str | None = Field(default=None, max_length=20)
+    verificado: bool = True
+    activo: bool = True
+    necesidades: list[str] = Field(default_factory=list, max_length=30)
+
+    @field_validator(
+        "mapa_url", "logo_url", "como_ayudar", "recomendaciones", "telefono", "whatsapp",
+        mode="before",
+    )
+    @classmethod
+    def _vacio_es_null(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
+    @field_validator("mapa_url")
+    @classmethod
+    def _es_link(cls, v):
+        if v is not None and not v.startswith(("http://", "https://")):
+            raise ValueError("El link de cómo llegar debe empezar con https://")
+        return v
+
+    @field_validator("necesidades")
+    @classmethod
+    def _sin_vacias(cls, v):
+        # Las filas vacías del formulario no se guardan; el orden de la lista es el `orden`
+        return [n.strip() for n in v if n and n.strip()]
