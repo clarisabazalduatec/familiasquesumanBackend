@@ -14,6 +14,23 @@ services:
       timeout: 5s
       retries: 5
 
+  almacen:
+    image: rustfs/rustfs:1.0.1
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
+    volumes:
+      - objetos:/data
+    ports:
+      - "127.0.0.1:9000:9000"   # API S3
+      - "127.0.0.1:9001:9001"   # consola
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: .
     restart: unless-stopped
@@ -21,22 +38,27 @@ services:
       - .env
     ports:
       - "127.0.0.1:8000:8000"
+    environment:
+      S3_ENDPOINT: http://almacen:9000
     depends_on:
       db:
+        condition: service_healthy
+      almacen:
         condition: service_healthy
     volumes:
       - ./app:/code/app
       - ./alembic:/code/alembic
       - media_data:/code/media 
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    command: tunnel --no-autoupdate --url http://api:8000
+    command: tunnel --no-autoupdate --protocol http2 --url http://api:8000
     depends_on:
       - api
 
 volumes:
   postgres_data:
   media_data:
+  objetos:

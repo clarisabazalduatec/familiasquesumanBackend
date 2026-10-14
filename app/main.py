@@ -19,6 +19,8 @@ from app.routers import (
     imagenes
 )
 
+from app import almacen
+
 app = FastAPI(title="Familias que Suman API")
 
 app.include_router(auth.router)
@@ -33,8 +35,7 @@ app.include_router(proyectos.router)
 app.include_router(donaciones.router)
 app.include_router(centros.router)
 
-  # Imágenes subidas por el admin: /media/<archivo>
-imagenes.carpeta_media()  # la crea si no existe
+# Imágenes subidas por el admin: /media/<archivo>
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 @app.get("/health")
@@ -46,3 +47,7 @@ async def health_check():
 async def health_db(db: AsyncSession = Depends(get_db)):
     await db.execute(text("SELECT 1"))  # despierta a Neon
     return {"status": "ok"}
+
+@app.on_event("startup")
+async def al_iniciar():
+    await almacen.preparar()

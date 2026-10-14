@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     media_dir: str = "media"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    
+    s3_endpoint: str = "http://almacen:9000"
+    s3_access_key: str
+    s3_secret_key: str
+    s3_bucket: str = "familias"
+    imagen_max_bytes: int = 2 * 1024 * 1024
 
 
 settings = Settings()
