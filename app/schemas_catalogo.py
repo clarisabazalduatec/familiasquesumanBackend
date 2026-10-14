@@ -87,6 +87,8 @@ class ProyectoDetalle(ProyectoResumen):
     whatsapp: str | None = None
     telefono: str | None = None
     opciones_apoyo: list[OpcionApoyoOut] = []
+    como_ayudar: str | None = None
+    instagram_url: str | None = None
 
 
 # ---------- Donaciones ----------

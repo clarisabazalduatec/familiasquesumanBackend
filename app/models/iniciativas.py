@@ -108,6 +108,8 @@ class Proyecto(Iniciativa):
     logo_url: Mapped[str | None] = mapped_column(String(500))
     whatsapp: Mapped[str | None] = mapped_column(String(20))
     telefono: Mapped[str | None] = mapped_column(String(20))
+    como_ayudar: Mapped[str | None] = mapped_column(Text)            # recuadro "¿Cómo ayudar?" (opcional)
+    instagram_url: Mapped[str | None] = mapped_column(String(300))   # "Síguenos en" (opcional)
 
     opciones_apoyo: Mapped[list["ProyectoOpcionApoyo"]] = relationship(
         cascade="all, delete-orphan", order_by="ProyectoOpcionApoyo.id", lazy="selectin"

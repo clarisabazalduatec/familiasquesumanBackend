@@ -92,24 +92,27 @@ def sembrar(db: Session) -> None:
                        "en nuestra comunidad. Toda ayuda es bienvenida para servir cenas calientes."),
         ),
     ])
-
     # ---------- Proyectos ----------
+    # descripcion_corta -> tarjeta de la lista y línea bajo el título del detalle
+    # acerca_de         -> "Acerca del proyecto";  descripcion_larga -> "Descripción"
+    # como_ayudar / instagram_url -> secciones opcionales del detalle
     db.add_all([
         Proyecto(
             titulo="Trazo... Escribiendo una nueva historia",
-            descripcion_corta=("Somos un grupo de mujeres voluntarias que realizamos visitas quincenales "
-                               "al Centro de Reinserción Social de Escobedo para acompañar a mujeres "
-                               "privadas de la libertad."),
+            descripcion_corta="Voluntariado que visita a mujeres en el penal de Escobedo.",
             ubicacion="Monterrey", ciudad=mty, organizacion=org["fqs"],
             estado=EstadoProyecto.ACTIVO, beneficiarios="25 Mujeres",
-            acerca_de="Voluntariado que visita a mujeres en el penal de Escobedo.",
+            acerca_de=("Trazo es un voluntariado que nace de la Asociación Renace, desde hace más de 2 "
+                       "años lleva pláticas de desarrollo humano y cursos de acuarela y caligrafía a "
+                       "mujeres privadas de la libertad quienes al final del semestre reciben un "
+                       "reconocimiento el cual les ayuda en su expediente judicial."),
             descripcion_larga=(
-                "Trazo es un voluntariado que nace de la Asociación Renace, desde hace más de 2 años "
-                "lleva pláticas de desarrollo humano y cursos de acuarela y caligrafía a mujeres "
-                "privadas de la libertad quienes al final del semestre reciben un reconocimiento el "
-                "cual les ayuda en su expediente judicial.\n\nEn cada encuentro buscamos ofrecer un "
-                "espacio de escucha, aprendizaje y esperanza, recordándoles que siempre es posible "
-                "comenzar de nuevo."),
+                "Somos un grupo de mujeres voluntarias que realizamos visitas quincenales al Centro de "
+                "Reinserción Social de Escobedo para acompañar a mujeres privadas de la libertad "
+                "mediante pláticas de desarrollo humano, talleres de acuarela y actividades que "
+                "fortalecen su autoestima, creatividad y crecimiento personal.\n\n"
+                "En cada encuentro buscamos ofrecer un espacio de escucha, aprendizaje y esperanza, "
+                "recordándoles que siempre es posible comenzar de nuevo."),
             whatsapp="5218110771068", telefono="8110771068",
             opciones_apoyo=[
                 ProyectoOpcionApoyo(
@@ -128,17 +131,21 @@ def sembrar(db: Session) -> None:
         ),
         Proyecto(
             titulo="Voluntariado DIF Te Acompaña",
-            descripcion_corta=("Acompañar a adultos mayores o jóvenes vulnerables, en soledad, con "
-                               "discapacidad o con una red de apoyo reducida."),
+            descripcion_corta="Acompañar a personas vulnerables.",
             ubicacion="San Pedro Garza García", ciudad=mty, organizacion=org["fqs"],
             estado=EstadoProyecto.ACTIVO, beneficiarios="200 adultos mayores",
-            acerca_de="Acompañamiento a adultos mayores en situación de vulnerabilidad.",
+            acerca_de=("El voluntariado existe desde hace varios años y se busca apoyar a personas "
+                       "vulnerables con una visita o ayuda con alimentos, medicinas o acompañamiento."),
             descripcion_larga=("Acompañar a adultos mayores o jóvenes vulnerables, en soledad, con "
                                "discapacidad o con una red de apoyo reducida. Realizar visitas en "
-                               "familia mínimo una vez cada 15 días."),
+                               "familia mínimo una vez cada 15 días. Se les puede asistir en compras de "
+                               "alimentos, medicamentos o solo una visita."),
+            como_ayudar=("Inscribir a su familia para que el Voluntariado les asigne una persona para "
+                         "visitar o acompañar."),
+            whatsapp="5218113008725", telefono="8113008725",
         ),
     ])
-
+    
     # ---------- Donaciones: campañas ----------
     db.add_all([
         Donacion(
