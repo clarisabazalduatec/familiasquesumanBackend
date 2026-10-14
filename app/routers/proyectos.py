@@ -29,7 +29,8 @@ async def _claves_validas(urls: list[str | None]) -> list[str]:
         c = almacen.clave_de(u)
         if not c:
             continue
-        if not c.startswith("http"):
+                # http(s) externas y las de antes del almacén ("/media/...") se dejan tal cual
+        if not c.startswith(("http", "/media/")):
             if not almacen.CLAVE_RE.match(c) or not await almacen.existe(c):
                 raise HTTPException(status_code=422, detail=f"La imagen {c} no existe en el almacén")
         claves.append(c)
@@ -116,3 +117,65 @@ async def _aplicar(db: AsyncSession, proyecto: Proyecto, datos: ProyectoGuardar)
     proyecto.descripcion_larga = datos.descripcion_larga
     proyecto.como_ayudar = datos.como_ayudar
     proyecto.instagram_url = datos.instagram_url
+    proyecto.whatsapp = datos.whatsapp
+    proyecto.telefono = datos.telefono
+    proyecto.logo_url = logo[0] if logo else None
+    # Listas: se reemplazan completas (delete-orphan borra las anteriores)
+    proyecto.imagenes = [IniciativaImagen(url=c, orden=i) for i, c in enumerate(claves)]
+    proyecto.opciones_apoyo = [
+        ProyectoOpcionApoyo(tipo=o.tipo, titulo=o.titulo.strip(), descripcion=o.descripcion.strip())
+        for o in datos.opciones_apoyo
+    ]
+
+
+async def _detalle(db: AsyncSession, proyecto_id: uuid.UUID) -> Proyecto:
+    stmt = select(Proyecto).where(Proyecto.id == proyecto_id).execution_options(populate_existing=True)
+    return (await db.execute(stmt)).scalar_one()
+
+
+@router.post("", response_model=ProyectoDetalle, status_code=status.HTTP_201_CREATED)
+async def crear_proyecto(
+    datos: ProyectoGuardar,
+    admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    proyecto = Proyecto(tipo=TipoIniciativa.PROYECTO, creado_por=admin.id, imagenes=[], opciones_apoyo=[])
+    await _aplicar(db, proyecto, datos)
+    db.add(proyecto)
+    await db.commit()
+    return await _detalle(db, proyecto.id)
+
+
+@router.put("/{proyecto_id}", response_model=ProyectoDetalle)
+async def editar_proyecto(
+    proyecto_id: uuid.UUID,
+    datos: ProyectoGuardar,
+    _admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    proyecto = await db.get(Proyecto, proyecto_id)
+    if proyecto is None:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    antes = _claves_de(proyecto)
+    await _aplicar(db, proyecto, datos)
+    despues = set(_claves_de(proyecto))
+    await db.commit()
+    # Solo después del commit: las imágenes que ya no usa el proyecto se borran del almacén
+    await _borrar_objetos([c for c in antes if c not in despues])
+    return await _detalle(db, proyecto.id)
+
+
+@router.delete("/{proyecto_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def borrar_proyecto(
+    proyecto_id: uuid.UUID,
+    _admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    proyecto = await db.get(Proyecto, proyecto_id)
+    if proyecto is None:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    claves = _claves_de(proyecto)
+    await db.delete(proyecto)
+    await db.commit()
+    await _borrar_objetos(claves)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
