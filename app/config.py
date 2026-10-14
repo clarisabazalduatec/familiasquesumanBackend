@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60
 
     gemini_api_key: str
+    media_dir: str = "media"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

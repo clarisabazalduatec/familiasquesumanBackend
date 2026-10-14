@@ -1,6 +1,8 @@
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.config import settings
 
 from app.database import get_db
 from app.routers import (
@@ -14,12 +16,14 @@ from app.routers import (
     invitaciones,
     proyectos,
     usuarios,
+    imagenes
 )
 
 app = FastAPI(title="Familias que Suman API")
 
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(imagenes.router)
 app.include_router(usuarios.router)
 app.include_router(familias.router)
 app.include_router(invitaciones.router)
@@ -29,6 +33,9 @@ app.include_router(proyectos.router)
 app.include_router(donaciones.router)
 app.include_router(centros.router)
 
+  # Imágenes subidas por el admin: /media/<archivo>
+imagenes.carpeta_media()  # la crea si no existe
+app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 @app.get("/health")
 async def health_check():
