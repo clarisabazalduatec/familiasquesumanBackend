@@ -87,6 +87,8 @@ class ProyectoDetalle(ProyectoResumen):
     whatsapp: str | None = None
     telefono: str | None = None
     opciones_apoyo: list[OpcionApoyoOut] = []
+    como_ayudar: str | None = None
+    instagram_url: str | None = None
 
 
 # ---------- Donaciones ----------
@@ -136,3 +138,46 @@ class CentroDetalle(CentroResumen):
     @classmethod
     def _solo_texto(cls, v):
         return [n.descripcion if hasattr(n, "descripcion") else n for n in v]
+
+
+
+# ---------- Entrada del admin ----------
+class OpcionApoyoIn(BaseModel):
+    tipo: TipoApoyo = TipoApoyo.TIEMPO_TALENTO  # la app ya no lo pide; se queda por compatibilidad
+    titulo: str = Field(min_length=1, max_length=200)
+    descripcion: str = Field(default="", max_length=2000)
+
+
+class ProyectoGuardar(BaseModel):
+    """Crear (POST) o reemplazar (PUT) un proyecto completo desde el formulario de admin.
+
+    estado ACTIVO -> pestaña "Proyectos activos"; ANTERIOR -> "Proyectos anteriores".
+    """
+
+    titulo: str = Field(min_length=1, max_length=160)
+    descripcion_corta: str = Field(min_length=1, max_length=300)
+    beneficiarios: str = Field(min_length=1, max_length=120)
+    estado: EstadoProyecto = EstadoProyecto.ACTIVO
+    ubicacion: str | None = Field(default=None, max_length=200)
+    ciudad_id: int | None = None  # None = Monterrey
+    acerca_de: str | None = None
+    descripcion_larga: str | None = None
+    como_ayudar: str | None = None
+    instagram_url: str | None = Field(default=None, max_length=300)
+    whatsapp: str | None = Field(default=None, max_length=20)
+    telefono: str | None = Field(default=None, max_length=20)
+    logo_url: str | None = Field(default=None, max_length=500)
+    imagenes: list[str] = Field(default_factory=list, max_length=10)
+    opciones_apoyo: list[OpcionApoyoIn] = Field(default_factory=list, max_length=10)
+
+    @field_validator(
+        "ubicacion", "acerca_de", "descripcion_larga", "como_ayudar",
+        "instagram_url", "whatsapp", "telefono", "logo_url", mode="before",
+    )
+    @classmethod
+    def _vacio_es_null(cls, v):
+        # "" o "   " desde la app = campo vacío
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
