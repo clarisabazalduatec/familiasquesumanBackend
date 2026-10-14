@@ -44,6 +44,26 @@ class GrupoEtiqueta(str, enum.Enum):
     METODO_ENTREGA = "METODO_ENTREGA"
 
 
+class RolUsuario(str, enum.Enum):
+    USUARIO = "USUARIO"
+    ADMIN = "ADMIN"
+
+
+class Parentesco(str, enum.Enum):
+    MAMA = "MAMA"
+    PAPA = "PAPA"
+    TUTOR = "TUTOR"
+    ABUELO = "ABUELO"
+    OTRO = "OTRO"
+
+
+class EstadoInvitacion(str, enum.Enum):
+    PENDIENTE = "PENDIENTE"
+    ACEPTADA = "ACEPTADA"
+    RECHAZADA = "RECHAZADA"
+    CANCELADA = "CANCELADA"
+
+
 def enum_col(enum_cls: type[enum.Enum], nombre: str) -> Enum:
     """Enum guardado como VARCHAR + CHECK (no como tipo nativo de Postgres).
 

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.database import get_db
 from app.models import Usuario
@@ -40,3 +41,15 @@ async def iniciar_sesion(datos: UsuarioLogin, db: AsyncSession = Depends(get_db)
 
     token = crear_access_token(usuario.id)
     return TokenRespuesta(access_token=token, usuario=usuario)
+
+@router.post("/token", include_in_schema=False)
+async def token_para_swagger(
+    form: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
+    """Solo para el botón Authorize de /docs (manda formulario, no JSON). La app usa /auth/login."""
+    resultado = await db.execute(select(Usuario).where(Usuario.email == form.username))
+    usuario = resultado.scalar_one_or_none()
+    if usuario is None or not verificar_password(form.password, usuario.password_hash):
+        raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
+    return {"access_token": crear_access_token(usuario.id), "token_type": "bearer"}

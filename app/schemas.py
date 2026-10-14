@@ -1,6 +1,8 @@
 import uuid
 from pydantic import BaseModel, EmailStr, ConfigDict
 
+from app.models.enums import RolUsuario
+
 
 class UsuarioCrear(BaseModel):
     nombre: str
@@ -21,6 +23,7 @@ class UsuarioRespuesta(BaseModel):
     nombre: str
     email: EmailStr
     ubicacion: str | None = None
+    rol: RolUsuario = RolUsuario.USUARIO
 
 
 class TokenRespuesta(BaseModel):

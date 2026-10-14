@@ -3,12 +3,26 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.routers import actividades, auth, catalogo, centros, chat, donaciones, proyectos
+from app.routers import (
+    actividades,
+    auth,
+    catalogo,
+    centros,
+    chat,
+    donaciones,
+    familias,
+    invitaciones,
+    proyectos,
+    usuarios,
+)
 
 app = FastAPI(title="Familias que Suman API")
 
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(usuarios.router)
+app.include_router(familias.router)
+app.include_router(invitaciones.router)
 app.include_router(catalogo.router)
 app.include_router(actividades.router)
 app.include_router(proyectos.router)

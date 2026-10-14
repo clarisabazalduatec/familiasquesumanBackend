@@ -10,11 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models import Usuario
+from app.models import RolUsuario, Usuario
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-oauth2_scheme_opcional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+oauth2_scheme_opcional = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 
 def hashear_password(password: str) -> str:
@@ -70,3 +70,10 @@ async def obtener_usuario_opcional(
 
     resultado = await db.execute(select(Usuario).where(Usuario.id == uuid.UUID(usuario_id)))
     return resultado.scalar_one_or_none()
+
+
+async def requiere_admin(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
+    """Úsala en endpoints de administración: Depends(requiere_admin)."""
+    if usuario.rol != RolUsuario.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores")
+    return usuario

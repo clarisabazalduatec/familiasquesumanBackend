@@ -3,9 +3,12 @@
 from app.models.catalogo import Categoria, Ciudad, Organizacion
 from app.models.enums import (
     AmbitoCategoria,
+    EstadoInvitacion,
     EstadoProyecto,
     GrupoEtiqueta,
     ModalidadDonacion,
+    Parentesco,
+    RolUsuario,
     TipoApoyo,
     TipoCentro,
     TipoIniciativa,
@@ -20,13 +23,14 @@ from app.models.iniciativas import (
     Proyecto,
     ProyectoOpcionApoyo,
 )
-from app.models.usuarios import MensajeChat, Usuario
+from app.models.usuarios import Familia, FamiliaMenor, InvitacionFamilia, MensajeChat, Usuario
 from app.models.visiteo import CentroNecesidad, CentroVisiteo
 
 __all__ = [
     "Actividad", "AmbitoCategoria", "Categoria", "CentroNecesidad", "CentroVisiteo",
-    "Ciudad", "Donacion", "DonacionEtiqueta", "DonacionOpcion", "EstadoProyecto",
-    "GrupoEtiqueta", "Iniciativa", "IniciativaImagen", "MensajeChat", "ModalidadDonacion",
-    "Organizacion", "Proyecto", "ProyectoOpcionApoyo", "TipoApoyo", "TipoCentro",
-    "TipoIniciativa", "Usuario",
+    "Ciudad", "Donacion", "DonacionEtiqueta", "DonacionOpcion", "EstadoInvitacion",
+    "EstadoProyecto", "Familia", "FamiliaMenor", "GrupoEtiqueta", "Iniciativa",
+    "IniciativaImagen", "InvitacionFamilia", "MensajeChat", "ModalidadDonacion",
+    "Organizacion", "Parentesco", "Proyecto", "ProyectoOpcionApoyo", "RolUsuario",
+    "TipoApoyo", "TipoCentro", "TipoIniciativa", "Usuario",
 ]
