@@ -8,7 +8,6 @@ from app.schemas_catalogo import CategoriaOut, CiudadOut
 
 router = APIRouter(tags=["catálogos"])
 
-
 @router.get("/ciudades", response_model=list[CiudadOut])
 async def listar_ciudades(db: AsyncSession = Depends(get_db)):
     stmt = select(Ciudad).where(Ciudad.activa.is_(True)).order_by(Ciudad.nombre)

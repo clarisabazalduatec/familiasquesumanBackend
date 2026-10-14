@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import almacen
 from app.database import get_db
 from app.models import (
     Ciudad,
@@ -20,6 +21,37 @@ from app.security import requiere_admin
 
 router = APIRouter(prefix="/proyectos", tags=["proyectos"])
 
+async def _claves_validas(urls: list[str | None]) -> list[str]:
+    """Normaliza lo que manda la app ('/imagenes/abc.jpg' -> 'abc.jpg') y valida que
+    cada clave exista en el almacén. Las URLs http(s) externas se respetan tal cual."""
+    claves: list[str] = []
+    for u in urls:
+        c = almacen.clave_de(u)
+        if not c:
+            continue
+        if not c.startswith("http"):
+            if not almacen.CLAVE_RE.match(c) or not await almacen.existe(c):
+                raise HTTPException(status_code=422, detail=f"La imagen {c} no existe en el almacén")
+        claves.append(c)
+    return claves
+
+
+async def _borrar_objetos(claves: list[str]) -> None:
+    """Borra del almacén solo las claves propias (no las http externas).
+    Si falla, queda un archivo huérfano, nunca una referencia rota."""
+    for c in claves:
+        if almacen.CLAVE_RE.match(c):
+            try:
+                await almacen.borrar(c)
+            except Exception:
+                pass
+
+
+def _claves_de(proyecto: Proyecto) -> list[str]:
+    claves = {i.url for i in proyecto.imagenes}
+    if proyecto.logo_url:
+        claves.add(proyecto.logo_url)
+    return list(claves)
 
 @router.get("", response_model=list[ProyectoResumen])
 async def listar_proyectos(
@@ -70,6 +102,10 @@ async def _ciudad_id(db: AsyncSession, ciudad_id: int | None) -> int:
 
 
 async def _aplicar(db: AsyncSession, proyecto: Proyecto, datos: ProyectoGuardar) -> None:
+    # Validar imágenes ANTES de tocar el proyecto: si alguna no existe, responde 422 y no cambia nada
+    logo = await _claves_validas([datos.logo_url])
+    claves = await _claves_validas(datos.imagenes)
+
     proyecto.titulo = datos.titulo.strip()
     proyecto.descripcion_corta = datos.descripcion_corta.strip()
     proyecto.beneficiarios = datos.beneficiarios.strip()
@@ -80,59 +116,3 @@ async def _aplicar(db: AsyncSession, proyecto: Proyecto, datos: ProyectoGuardar)
     proyecto.descripcion_larga = datos.descripcion_larga
     proyecto.como_ayudar = datos.como_ayudar
     proyecto.instagram_url = datos.instagram_url
-    proyecto.whatsapp = datos.whatsapp
-    proyecto.telefono = datos.telefono
-    proyecto.logo_url = datos.logo_url
-    # Listas: se reemplazan completas (delete-orphan borra las anteriores)
-    proyecto.imagenes = [IniciativaImagen(url=u, orden=i) for i, u in enumerate(datos.imagenes)]
-    proyecto.opciones_apoyo = [
-        ProyectoOpcionApoyo(tipo=o.tipo, titulo=o.titulo.strip(), descripcion=o.descripcion.strip())
-        for o in datos.opciones_apoyo
-    ]
-
-
-async def _detalle(db: AsyncSession, proyecto_id: uuid.UUID) -> Proyecto:
-    stmt = select(Proyecto).where(Proyecto.id == proyecto_id).execution_options(populate_existing=True)
-    return (await db.execute(stmt)).scalar_one()
-
-
-@router.post("", response_model=ProyectoDetalle, status_code=status.HTTP_201_CREATED)
-async def crear_proyecto(
-    datos: ProyectoGuardar,
-    admin: Usuario = Depends(requiere_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    proyecto = Proyecto(tipo=TipoIniciativa.PROYECTO, creado_por=admin.id, imagenes=[], opciones_apoyo=[])
-    await _aplicar(db, proyecto, datos)
-    db.add(proyecto)
-    await db.commit()
-    return await _detalle(db, proyecto.id)
-
-
-@router.put("/{proyecto_id}", response_model=ProyectoDetalle)
-async def editar_proyecto(
-    proyecto_id: uuid.UUID,
-    datos: ProyectoGuardar,
-    _admin: Usuario = Depends(requiere_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    proyecto = await db.get(Proyecto, proyecto_id)
-    if proyecto is None:
-        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    await _aplicar(db, proyecto, datos)
-    await db.commit()
-    return await _detalle(db, proyecto.id)
-
-
-@router.delete("/{proyecto_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def borrar_proyecto(
-    proyecto_id: uuid.UUID,
-    _admin: Usuario = Depends(requiere_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    proyecto = await db.get(Proyecto, proyecto_id)
-    if proyecto is None:
-        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    await db.delete(proyecto)
-    await db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

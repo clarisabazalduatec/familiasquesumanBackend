@@ -13,6 +13,7 @@ from app.models.enums import (
     TipoIniciativa,
 )
 
+from app.almacen import url_publica
 
 class _Salida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -37,6 +38,11 @@ class OrganizacionOut(_Salida):
     logo_url: str | None = None
     verificada: bool
 
+    @field_validator("logo_url")
+    @classmethod
+    def _logo(cls, v):
+        return url_publica(v)
+
 
 # ---------- Base común de iniciativas ----------
 class _IniciativaResumen(_Salida):
@@ -52,7 +58,7 @@ class _IniciativaResumen(_Salida):
     @field_validator("imagenes", mode="before")
     @classmethod
     def _solo_urls(cls, v):
-        return [i.url if hasattr(i, "url") else i for i in v]
+        return [url_publica(i.url if hasattr(i, "url") else i) for i in v]
 
 
 # ---------- Actividades ----------
@@ -79,6 +85,11 @@ class ProyectoResumen(_IniciativaResumen):
     estado: EstadoProyecto
     beneficiarios: str
     logo_url: str | None = Field(default=None, validation_alias="logo")
+
+    @field_validator("logo_url")
+    @classmethod
+    def _logo(cls, v):
+        return url_publica(v)
 
 
 class ProyectoDetalle(ProyectoResumen):
@@ -124,6 +135,11 @@ class CentroResumen(_Salida):
     ciudad: CiudadOut
     logo_url: str | None = None
     verificado: bool
+
+    @field_validator("logo_url")
+    @classmethod
+    def _logo(cls, v):
+        return url_publica(v)
 
 
 class CentroDetalle(CentroResumen):
