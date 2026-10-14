@@ -18,6 +18,7 @@ class CentroVisiteo(Base):
     descripcion_corta: Mapped[str] = mapped_column(String(300))
     informacion_general: Mapped[str] = mapped_column(Text)
     direccion: Mapped[str] = mapped_column(String(250))
+    mapa_url: Mapped[str | None] = mapped_column(String(500))  # link de "Cómo llegar" (Google Maps, etc.)
     ciudad_id: Mapped[int] = mapped_column(ForeignKey("ciudades.id"), index=True)
     logo_url: Mapped[str | None] = mapped_column(String(500))
     como_ayudar: Mapped[str | None] = mapped_column(Text)

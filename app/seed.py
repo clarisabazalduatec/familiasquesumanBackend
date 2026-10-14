@@ -227,6 +227,7 @@ def sembrar(db: Session) -> None:
                              "Se les proporciona una vida digna. Se les ofrece refugio, alimentación, "
                              "atención integral y compañía."),
         direccion="Blvd Jose Maria Gonzalez #1000, Cadereyta", ciudad=mty,
+        mapa_url="https://www.google.com/maps/search/?api=1&query=Blvd+Jose+Maria+Gonzalez+1000+Cadereyta+Nuevo+Leon",
         como_ayudar="Donación en especie. Visita a los ancianos para convivir y platicar.",
         recomendaciones="Hablar con anticipación para ver que actividades se recomiendan y en que horario.",
         telefono="8282844311", whatsapp="528282844311",
