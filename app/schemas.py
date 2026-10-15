@@ -43,5 +43,13 @@ class ChatMensajeEntrada(BaseModel):
     # La app manda los mensajes que hay en pantalla; el backend no guarda conversaciones.
     historial: list[ChatTurno] = Field(default_factory=list, max_length=40)
 
+class ChatEnlace(BaseModel):
+    """Botón que la app muestra bajo la respuesta para abrir el detalle de una iniciativa."""
+    tipo: Literal["actividad", "proyecto", "donacion", "centro"]
+    id: str
+    titulo: str
+
+
 class ChatMensajeRespuesta(BaseModel):
     respuesta: str
+    enlaces: list[ChatEnlace] = []
