@@ -18,6 +18,7 @@ from app.routers import (
     catalogo,
     centros,
     chat,
+    comunidad,
     donaciones,
     familias,
     invitaciones,
@@ -80,6 +81,7 @@ app.include_router(actividades.router)
 app.include_router(proyectos.router)
 app.include_router(donaciones.router)
 app.include_router(centros.router)
+app.include_router(comunidad.router)
 
 # Imágenes subidas por el admin: /media/<archivo>
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
