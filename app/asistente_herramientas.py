@@ -16,7 +16,7 @@ import unicodedata
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
-import google.generativeai as genai
+from google.genai import types
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -45,6 +45,17 @@ PALABRAS_VACIAS = {
     "algun", "algún", "quiero", "puedo", "como", "cómo", "donde", "dónde", "cual", "cuál",
 }
 
+# Palabras que describen la SECCIÓN, no lo que se busca ("¿dónde puedo donar?", "voluntariado del DIF").
+# Si contaran, "donar" no coincidiría con nada y el modelo diría que no hay donaciones.
+PALABRAS_GENERICAS = {
+    "voluntariado", "voluntariados", "voluntario", "voluntaria", "voluntarios", "voluntarias",
+    "donar", "dono", "donacion", "donaciones", "donativo", "donativos", "aportar", "aportacion",
+    "ayudar", "ayuda", "apoyar", "apoyo", "participar", "colaborar", "visitar", "visita",
+    "actividad", "actividades", "proyecto", "proyectos", "centro", "centros", "iniciativa",
+    "iniciativas", "evento", "eventos", "opcion", "opciones", "familia", "familias", "app",
+    "hay", "tienen", "busco", "buscar", "informacion", "info", "saber", "lugar", "lugares",
+}
+
 
 # ---------------------------------------------------------------------------
 # Utilidades
@@ -58,11 +69,13 @@ def _normalizar(texto: str | None) -> str:
     sin_acentos = "".join(c for c in sin_acentos if unicodedata.category(c) != "Mn")
     return sin_acentos.lower()
 
+_IGNORAR = {_normalizar(v) for v in PALABRAS_VACIAS | PALABRAS_GENERICAS}
+
 
 def _palabras(texto: str | None) -> list[str]:
     return [
         p for p in re.findall(r"[a-z0-9]+", _normalizar(texto))
-        if len(p) > 2 and p not in {_normalizar(v) for v in PALABRAS_VACIAS}
+        if len(p) > 2 and p not in _IGNORAR
     ]
 
 
@@ -112,10 +125,17 @@ def _limpio(d: dict) -> dict:
     return {k: v for k, v in d.items() if v not in (None, "", [], {})}
 
 
-def _respuesta(items: list[dict], hubo_coincidencias: bool, total: int) -> dict:
-    r = {"resultados": items, "total_en_la_app": total}
+def _enlace(tipo: str, id_, titulo: str) -> dict:
+    return {"tipo": tipo, "id": str(id_), "titulo": titulo}
+
+
+def _respuesta(items: list[dict], hubo_coincidencias: bool, total: int, enlaces: list[dict]) -> dict:
+    # "_enlaces" NO se manda al modelo (chat.py lo saca): sirve para poner botones en la app
+    # que llevan al detalle de lo que el asistente mencione.
+    r = {"resultados": items, "total_en_la_app": total, "_enlaces": enlaces}
     if not hubo_coincidencias:
-        r["aviso"] = "Nada coincide con la búsqueda; estos son los más recientes/próximos."
+        r["aviso"] = ("Ningún registro menciona esas palabras exactas; estas son TODAS las opciones "
+                      "disponibles de esta sección. Revisa si alguna sirve antes de decir que no hay.")
     if not items:
         r["aviso"] = "No hay registros de este tipo en la app por ahora."
     return r
@@ -152,7 +172,8 @@ async def buscar_actividades(db: AsyncSession, texto: str | None = None) -> dict
         })
         for a in orden[:MAX_RESULTADOS]
     ]
-    return _respuesta(items, hubo, len(todas))
+    enlaces = [_enlace("actividad", a.id, a.titulo) for a in orden[:MAX_RESULTADOS]]
+    return _respuesta(items, hubo, len(todas), enlaces)
 
 
 async def buscar_proyectos(db: AsyncSession, texto: str | None = None, estado: str | None = None) -> dict:
@@ -182,7 +203,8 @@ async def buscar_proyectos(db: AsyncSession, texto: str | None = None, estado: s
         })
         for p in orden[:MAX_RESULTADOS]
     ]
-    return _respuesta(items, hubo, len(todos))
+    enlaces = [_enlace("proyecto", p.id, p.titulo) for p in orden[:MAX_RESULTADOS]]
+    return _respuesta(items, hubo, len(todos), enlaces)
 
 
 async def buscar_donaciones(db: AsyncSession, texto: str | None = None, modalidad: str | None = None) -> dict:
@@ -213,7 +235,8 @@ async def buscar_donaciones(db: AsyncSession, texto: str | None = None, modalida
             "condiciones": _corto(d.condiciones_recepcion),
             "whatsapp": d.whatsapp,
         }))
-    return _respuesta(items, hubo, len(todas))
+    enlaces = [_enlace("donacion", d.id, d.titulo) for d in orden[:MAX_RESULTADOS]]
+    return _respuesta(items, hubo, len(todas), enlaces)
 
 
 async def buscar_centros(db: AsyncSession, texto: str | None = None, tipo: str | None = None) -> dict:
@@ -244,7 +267,8 @@ async def buscar_centros(db: AsyncSession, texto: str | None = None, tipo: str |
         })
         for c in orden[:MAX_RESULTADOS]
     ]
-    return _respuesta(items, hubo, len(todos))
+    enlaces = [_enlace("centro", c.id, c.nombre) for c in orden[:MAX_RESULTADOS]]
+    return _respuesta(items, hubo, len(todos), enlaces)
 
 
 # ---------------------------------------------------------------------------
@@ -298,20 +322,20 @@ async def mi_cuenta(db: AsyncSession, usuario: Usuario | None) -> dict:
 
     return _limpio(datos)
 
-
 # ---------------------------------------------------------------------------
 # Declaraciones para Gemini (lo que el modelo "ve" de cada herramienta)
 # ---------------------------------------------------------------------------
 
-_P = genai.protos
+def _texto(desc: str) -> types.Schema:
+    return types.Schema(type=types.Type.STRING, description=desc)
 
 
-def _texto(desc: str):
-    return _P.Schema(type=_P.Type.STRING, description=desc)
+def _opciones(desc: str, valores: list[str]) -> types.Schema:
+    return types.Schema(type=types.Type.STRING, description=desc, enum=valores, format="enum")
 
 
-def _opciones(desc: str, valores: list[str]):
-    return _P.Schema(type=_P.Type.STRING, description=desc, enum=valores, format="enum")
+def _objeto(propiedades: dict) -> types.Schema:
+    return types.Schema(type=types.Type.OBJECT, properties=propiedades)
 
 
 _TEXTO_BUSQUEDA = _texto(
@@ -319,49 +343,79 @@ _TEXTO_BUSQUEDA = _texto(
     "Omítelo para traer los más próximos/recientes."
 )
 
-DECLARACIONES = _P.Tool(function_declarations=[
-    _P.FunctionDeclaration(
+DECLARACIONES = types.Tool(function_declarations=[
+    types.FunctionDeclaration(
+        name="buscar_en_todo",
+        description="Busca en TODAS las secciones a la vez (actividades, proyectos, donaciones y centros). "
+                    "Úsala cuando la persona menciona un nombre (organización, lugar, causa) o no está claro "
+                    "en qué sección está lo que busca.",
+        parameters=_objeto({"texto": _texto("Palabras clave, ej. 'DIF', 'Cadereyta', 'adultos mayores'.")}),
+    ),
+    types.FunctionDeclaration(
         name="buscar_actividades",
         description="Busca actividades de voluntariado en familia PRÓXIMAS (fecha, lugar, lugares disponibles).",
-        parameters=_P.Schema(type=_P.Type.OBJECT, properties={"texto": _TEXTO_BUSQUEDA}),
+        parameters=_objeto({"texto": _TEXTO_BUSQUEDA}),
     ),
-    _P.FunctionDeclaration(
+    types.FunctionDeclaration(
         name="buscar_proyectos",
-        description="Busca proyectos sociales: a quién benefician, cómo ayudar, formas de apoyo y contacto.",
-        parameters=_P.Schema(type=_P.Type.OBJECT, properties={
+        description="Busca proyectos sociales y voluntariados permanentes de organizaciones (ej. DIF): "
+                    "a quién benefician, cómo ayudar, formas de apoyo y contacto.",
+        parameters=_objeto({
             "texto": _TEXTO_BUSQUEDA,
             "estado": _opciones("ACTIVO = recibe apoyo hoy; ANTERIOR = ya terminó.", ["ACTIVO", "ANTERIOR"]),
         }),
     ),
-    _P.FunctionDeclaration(
+    types.FunctionDeclaration(
         name="buscar_donaciones",
         description="Busca campañas de donación de dinero o en especie: qué se necesita, metas, montos y dónde entregar.",
-        parameters=_P.Schema(type=_P.Type.OBJECT, properties={
+        parameters=_objeto({
             "texto": _TEXTO_BUSQUEDA,
             "modalidad": _opciones("CAMPANA = dinero; ESPECIE = artículos.", ["CAMPANA", "ESPECIE"]),
         }),
     ),
-    _P.FunctionDeclaration(
+    types.FunctionDeclaration(
         name="buscar_centros",
         description="Busca en el Directorio de Visiteo (asilos, casas hogar, comedores): dirección, necesidades, cómo ayudar y contacto.",
-        parameters=_P.Schema(type=_P.Type.OBJECT, properties={
+        parameters=_objeto({
             "texto": _TEXTO_BUSQUEDA,
             "tipo": _opciones("Tipo de centro.", ["ASILO", "CASA_HOGAR", "COMEDOR"]),
         }),
     ),
-    _P.FunctionDeclaration(
+    types.FunctionDeclaration(
         name="mi_cuenta",
         description="Datos de la persona que está chateando: su nombre, su familia (adultos y menores con edad) "
                     "e invitaciones pendientes. Úsala para recomendaciones personalizadas o si pregunta por su cuenta.",
-        parameters=_P.Schema(type=_P.Type.OBJECT, properties={}),
+        parameters=None,  # sin parámetros
     ),
 ])
+
+
+
+async def buscar_en_todo(db: AsyncSession, texto: str | None) -> dict:
+    """Busca en las 4 secciones a la vez. Útil cuando no está claro si algo es actividad,
+    proyecto, donación o centro (ej. "DIF", "Cadereyta", "niños")."""
+    secciones = {
+        "actividades": await buscar_actividades(db, texto),
+        "proyectos": await buscar_proyectos(db, texto),
+        "donaciones": await buscar_donaciones(db, texto),
+        "centros": await buscar_centros(db, texto),
+    }
+    r: dict = {"_enlaces": []}
+    for nombre, res in secciones.items():
+        if res["resultados"] and "aviso" not in res:  # solo lo que sí coincide
+            r[nombre] = res["resultados"][:3]
+            r["_enlaces"] += res["_enlaces"][:3]
+    if len(r) == 1:
+        r["aviso"] = "Nada en la app menciona esas palabras. Prueba con la sección más cercana."
+    return r
 
 
 async def ejecutar(nombre: str, args: dict, db: AsyncSession, usuario: Usuario | None) -> dict:
     """Ejecuta la herramienta pedida por el modelo. Los argumentos se filtran: solo pasan los esperados."""
     texto = args.get("texto")
     texto = str(texto)[:100] if texto else None
+    if nombre == "buscar_en_todo":
+        return await buscar_en_todo(db, texto)
     if nombre == "buscar_actividades":
         return await buscar_actividades(db, texto)
     if nombre == "buscar_proyectos":
