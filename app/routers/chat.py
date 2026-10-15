@@ -1,6 +1,11 @@
 import asyncio
 import logging
 from time import perf_counter
+import os
+
+from google.api_core import exceptions as gexc
+from google.api_core import retry_async
+from google.api_core.retry import if_exception_type
 
 import google.generativeai as genai
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,15 +25,15 @@ log = logging.getLogger("uvicorn.error")  # el logger que uvicorn sí imprime en
 
 genai.configure(api_key=settings.gemini_api_key)
 
-MODELO = "gemini-3.1-flash-lite"
+MODELO = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 MAX_MENSAJE = 1000      # caracteres que acepta del usuario
 MAX_HISTORIAL = 10      # mensajes previos (de la pantalla) que se mandan como contexto
 MAX_RONDAS = 4          # máximo de idas y vueltas con herramientas por mensaje
 TIEMPO_GEMINI = 20      # segundos máximos por llamada a Gemini
 TIEMPO_TOTAL = 45       # segundos máximos por mensaje (la app espera 60)
 RESPUESTA_FALLA = (
-    "Perdón, tuve un problema para responderte en este momento. "
-    "Intenta de nuevo en un ratito o revisa directamente la sección de la app."
+    "No fue posible obtener una respuesta en este momento. Intenta de nuevo en unos minutos "
+    "o consulta directamente la sección correspondiente de la app."
 )
 
 
@@ -48,9 +53,25 @@ def _texto(respuesta) -> str:
         return ""
 
 
-async def _gemini(chat, contenido):
-    return await asyncio.wait_for(chat.send_message_async(contenido), timeout=TIEMPO_GEMINI)
+def _aviso_reintento(error: Exception) -> None:
+    log.warning("chatbot Gemini no disponible (%s), reintentando...", type(error).__name__)
 
+
+# Si Gemini está saturado (503) se reintenta rápido y queda en el log;
+# antes la librería reintentaba en silencio hasta por 10 minutos.
+REINTENTOS = retry_async.AsyncRetry(
+    predicate=if_exception_type(gexc.ServiceUnavailable),
+    initial=0.5, maximum=2.0, multiplier=2.0,
+    timeout=TIEMPO_GEMINI,
+    on_error=_aviso_reintento,
+)
+
+
+async def _gemini(chat, contenido):
+    return await asyncio.wait_for(
+        chat.send_message_async(contenido, request_options={"retry": REINTENTOS, "timeout": TIEMPO_GEMINI}),
+        timeout=TIEMPO_GEMINI + 2,
+    )
 
 async def responder(chat, mensaje: str, db: AsyncSession, usuario: Usuario | None) -> str:
     """Bucle de function calling: el modelo pide herramientas, el backend las ejecuta
