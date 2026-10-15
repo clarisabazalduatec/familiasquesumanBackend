@@ -6,9 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import CentroNecesidad, CentroVisiteo, TipoCentro, Usuario
-from app.routers._comun import Paginacion, obtener_o_404
+from app.routers._comun import Paginacion, obtener_o_404, _borrar_objetos, _ciudad_id, _claves_validas
 # Mismas reglas de imágenes y ciudad por default que en proyectos
-from app.routers.proyectos import _borrar_objetos, _ciudad_id, _claves_validas
 from app.schemas_catalogo import CentroAdmin, CentroDetalle, CentroGuardar, CentroResumen
 from app.security import requiere_admin
 
