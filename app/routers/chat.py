@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import warnings
 from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,6 +20,9 @@ from app.security import obtener_usuario_opcional
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 log = logging.getLogger("uvicorn.error")  # el logger que uvicorn sí imprime en docker logs
+
+# Avisos internos de google-genai con nuestra versión de pydantic: no afectan, solo ensucian el log.
+warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
 
 # Se puede cambiar sin tocar código: GEMINI_MODEL=... en el .env
 MODELO = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")

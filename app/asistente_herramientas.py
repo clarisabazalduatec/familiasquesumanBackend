@@ -45,6 +45,17 @@ PALABRAS_VACIAS = {
     "algun", "algún", "quiero", "puedo", "como", "cómo", "donde", "dónde", "cual", "cuál",
 }
 
+# Palabras que describen la SECCIÓN, no lo que se busca ("¿dónde puedo donar?", "voluntariado del DIF").
+# Si contaran, "donar" no coincidiría con nada y el modelo diría que no hay donaciones.
+PALABRAS_GENERICAS = {
+    "voluntariado", "voluntariados", "voluntario", "voluntaria", "voluntarios", "voluntarias",
+    "donar", "dono", "donacion", "donaciones", "donativo", "donativos", "aportar", "aportacion",
+    "ayudar", "ayuda", "apoyar", "apoyo", "participar", "colaborar", "visitar", "visita",
+    "actividad", "actividades", "proyecto", "proyectos", "centro", "centros", "iniciativa",
+    "iniciativas", "evento", "eventos", "opcion", "opciones", "familia", "familias", "app",
+    "hay", "tienen", "busco", "buscar", "informacion", "info", "saber", "lugar", "lugares",
+}
+
 
 # ---------------------------------------------------------------------------
 # Utilidades
@@ -58,11 +69,13 @@ def _normalizar(texto: str | None) -> str:
     sin_acentos = "".join(c for c in sin_acentos if unicodedata.category(c) != "Mn")
     return sin_acentos.lower()
 
+_IGNORAR = {_normalizar(v) for v in PALABRAS_VACIAS | PALABRAS_GENERICAS}
+
 
 def _palabras(texto: str | None) -> list[str]:
     return [
         p for p in re.findall(r"[a-z0-9]+", _normalizar(texto))
-        if len(p) > 2 and p not in {_normalizar(v) for v in PALABRAS_VACIAS}
+        if len(p) > 2 and p not in _IGNORAR
     ]
 
 
@@ -121,7 +134,8 @@ def _respuesta(items: list[dict], hubo_coincidencias: bool, total: int, enlaces:
     # que llevan al detalle de lo que el asistente mencione.
     r = {"resultados": items, "total_en_la_app": total, "_enlaces": enlaces}
     if not hubo_coincidencias:
-        r["aviso"] = "Nada coincide con la búsqueda; estos son los más recientes/próximos."
+        r["aviso"] = ("Ningún registro menciona esas palabras exactas; estas son TODAS las opciones "
+                      "disponibles de esta sección. Revisa si alguna sirve antes de decir que no hay.")
     if not items:
         r["aviso"] = "No hay registros de este tipo en la app por ahora."
     return r
@@ -331,13 +345,21 @@ _TEXTO_BUSQUEDA = _texto(
 
 DECLARACIONES = types.Tool(function_declarations=[
     types.FunctionDeclaration(
+        name="buscar_en_todo",
+        description="Busca en TODAS las secciones a la vez (actividades, proyectos, donaciones y centros). "
+                    "Úsala cuando la persona menciona un nombre (organización, lugar, causa) o no está claro "
+                    "en qué sección está lo que busca.",
+        parameters=_objeto({"texto": _texto("Palabras clave, ej. 'DIF', 'Cadereyta', 'adultos mayores'.")}),
+    ),
+    types.FunctionDeclaration(
         name="buscar_actividades",
         description="Busca actividades de voluntariado en familia PRÓXIMAS (fecha, lugar, lugares disponibles).",
         parameters=_objeto({"texto": _TEXTO_BUSQUEDA}),
     ),
     types.FunctionDeclaration(
         name="buscar_proyectos",
-        description="Busca proyectos sociales: a quién benefician, cómo ayudar, formas de apoyo y contacto.",
+        description="Busca proyectos sociales y voluntariados permanentes de organizaciones (ej. DIF): "
+                    "a quién benefician, cómo ayudar, formas de apoyo y contacto.",
         parameters=_objeto({
             "texto": _TEXTO_BUSQUEDA,
             "estado": _opciones("ACTIVO = recibe apoyo hoy; ANTERIOR = ya terminó.", ["ACTIVO", "ANTERIOR"]),
@@ -366,3 +388,42 @@ DECLARACIONES = types.Tool(function_declarations=[
         parameters=None,  # sin parámetros
     ),
 ])
+
+
+
+async def buscar_en_todo(db: AsyncSession, texto: str | None) -> dict:
+    """Busca en las 4 secciones a la vez. Útil cuando no está claro si algo es actividad,
+    proyecto, donación o centro (ej. "DIF", "Cadereyta", "niños")."""
+    secciones = {
+        "actividades": await buscar_actividades(db, texto),
+        "proyectos": await buscar_proyectos(db, texto),
+        "donaciones": await buscar_donaciones(db, texto),
+        "centros": await buscar_centros(db, texto),
+    }
+    r: dict = {"_enlaces": []}
+    for nombre, res in secciones.items():
+        if res["resultados"] and "aviso" not in res:  # solo lo que sí coincide
+            r[nombre] = res["resultados"][:3]
+            r["_enlaces"] += res["_enlaces"][:3]
+    if len(r) == 1:
+        r["aviso"] = "Nada en la app menciona esas palabras. Prueba con la sección más cercana."
+    return r
+
+
+async def ejecutar(nombre: str, args: dict, db: AsyncSession, usuario: Usuario | None) -> dict:
+    """Ejecuta la herramienta pedida por el modelo. Los argumentos se filtran: solo pasan los esperados."""
+    texto = args.get("texto")
+    texto = str(texto)[:100] if texto else None
+    if nombre == "buscar_en_todo":
+        return await buscar_en_todo(db, texto)
+    if nombre == "buscar_actividades":
+        return await buscar_actividades(db, texto)
+    if nombre == "buscar_proyectos":
+        return await buscar_proyectos(db, texto, args.get("estado"))
+    if nombre == "buscar_donaciones":
+        return await buscar_donaciones(db, texto, args.get("modalidad"))
+    if nombre == "buscar_centros":
+        return await buscar_centros(db, texto, args.get("tipo"))
+    if nombre == "mi_cuenta":
+        return await mi_cuenta(db, usuario)  # el usuario sale del token, nunca de los argumentos
+    return {"error": f"La herramienta '{nombre}' no existe."}
