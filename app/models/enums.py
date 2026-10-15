@@ -63,6 +63,17 @@ class EstadoInvitacion(str, enum.Enum):
     RECHAZADA = "RECHAZADA"
     CANCELADA = "CANCELADA"
 
+##COMUNIDAD
+class TipoPublicacion(str, enum.Enum):
+    OFICIAL = "OFICIAL"
+    COMUNIDAD = "COMUNIDAD"
+
+class EstadoPublicacion(str, enum.Enum):
+    PENDIENTE = "PENDIENTE"
+    APROBADA = "APROBADA"
+    RECHAZADA = "RECHAZADA"
+
+
 
 def enum_col(enum_cls: type[enum.Enum], nombre: str) -> Enum:
     """Enum guardado como VARCHAR + CHECK (no como tipo nativo de Postgres).

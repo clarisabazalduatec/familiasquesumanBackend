@@ -26,11 +26,25 @@ from app.models.iniciativas import (
 from app.models.usuarios import Familia, FamiliaMenor, InvitacionFamilia, MensajeChat, Usuario
 from app.models.visiteo import CentroNecesidad, CentroVisiteo
 
+
+
+##comunidad
+from app.models.comunidad import (
+    Publicacion,
+    PublicacionImagen,
+    PublicacionLike,
+    Comentario,
+    ComentarioLike,
+)
+from app.models.enums import TipoPublicacion, EstadoPublicacion
+
 __all__ = [
     "Actividad", "AmbitoCategoria", "Categoria", "CentroNecesidad", "CentroVisiteo",
     "Ciudad", "Donacion", "DonacionEtiqueta", "DonacionOpcion", "EstadoInvitacion",
     "EstadoProyecto", "Familia", "FamiliaMenor", "GrupoEtiqueta", "Iniciativa",
     "IniciativaImagen", "InvitacionFamilia", "MensajeChat", "ModalidadDonacion",
     "Organizacion", "Parentesco", "Proyecto", "ProyectoOpcionApoyo", "RolUsuario",
-    "TipoApoyo", "TipoCentro", "TipoIniciativa", "Usuario",
+    "TipoApoyo", "TipoCentro", "TipoIniciativa", "Usuario","Publicacion",
+    "PublicacionImagen","PublicacionLike","Comentario","ComentarioLike",
+    "TipoPublicacion","EstadoPublicacion",
 ]
