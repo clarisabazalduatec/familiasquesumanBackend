@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import (
     AmbitoCategoria,
@@ -251,3 +251,57 @@ class CentroGuardar(BaseModel):
     def _sin_vacias(cls, v):
         # Las filas vacías del formulario no se guardan; el orden de la lista es el `orden`
         return [n.strip() for n in v if n and n.strip()]
+
+# ---------- Actividades: admin ----------
+class ActividadAdmin(ActividadDetalle):
+    """Lo que ve el panel de admin: incluye las desactivadas."""
+    activa: bool
+
+
+class ActividadGuardar(BaseModel):
+    titulo: str = Field(min_length=1, max_length=160)
+    descripcion_corta: str = Field(min_length=1, max_length=300)
+    ubicacion: str | None = Field(default=None, max_length=200)
+    ciudad_id: int | None = None  # None = Monterrey
+    categoria_id: int
+    organizacion_nombre: str | None = Field(default=None, max_length=160)  # se busca o se crea
+    inicia_en: datetime
+    termina_en: datetime
+    cupo_total: int = Field(gt=0)
+    acerca_de: str | None = None
+    activa: bool = True
+    imagenes: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("ubicacion", "organizacion_nombre", "acerca_de", mode="before")
+    @classmethod
+    def _vacio_es_null(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
+    @field_validator("inicia_en", "termina_en")
+    @classmethod
+    def _con_zona(cls, v: datetime):
+        if v.tzinfo is None:
+            raise ValueError("La fecha debe incluir zona horaria (ej. 2026-10-24T09:00:00-06:00)")
+        return v
+
+    @model_validator(mode="after")
+    def _fechas_en_orden(self):
+        if self.termina_en <= self.inicia_en:
+            raise ValueError("termina_en debe ser posterior a inicia_en")
+        return self
+
+
+class CategoriaCrear(BaseModel):
+    ambito: AmbitoCategoria
+    nombre: str = Field(min_length=1, max_length=80)
+
+    @field_validator("nombre")
+    @classmethod
+    def _limpio(cls, v: str):
+        v = " ".join(v.split())
+        if not v:
+            raise ValueError("El nombre no puede estar vacío")
+        return v

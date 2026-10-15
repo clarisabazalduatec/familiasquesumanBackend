@@ -15,38 +15,11 @@ from app.models import (
     TipoIniciativa,
     Usuario,
 )
-from app.routers._comun import Paginacion, obtener_o_404
+from app.routers._comun import Paginacion, obtener_o_404, _borrar_objetos, _ciudad_id, _claves_validas
 from app.schemas_catalogo import ProyectoDetalle, ProyectoGuardar, ProyectoResumen
 from app.security import requiere_admin
 
 router = APIRouter(prefix="/proyectos", tags=["proyectos"])
-
-async def _claves_validas(urls: list[str | None]) -> list[str]:
-    """Normaliza lo que manda la app ('/imagenes/abc.jpg' -> 'abc.jpg') y valida que
-    cada clave exista en el almacén. Las URLs http(s) externas se respetan tal cual."""
-    claves: list[str] = []
-    for u in urls:
-        c = almacen.clave_de(u)
-        if not c:
-            continue
-                # http(s) externas y las de antes del almacén ("/media/...") se dejan tal cual
-        if not c.startswith(("http", "/media/")):
-            if not almacen.CLAVE_RE.match(c) or not await almacen.existe(c):
-                raise HTTPException(status_code=422, detail=f"La imagen {c} no existe en el almacén")
-        claves.append(c)
-    return claves
-
-
-async def _borrar_objetos(claves: list[str]) -> None:
-    """Borra del almacén solo las claves propias (no las http externas).
-    Si falla, queda un archivo huérfano, nunca una referencia rota."""
-    for c in claves:
-        if almacen.CLAVE_RE.match(c):
-            try:
-                await almacen.borrar(c)
-            except Exception:
-                pass
-
 
 def _claves_de(proyecto: Proyecto) -> list[str]:
     claves = {i.url for i in proyecto.imagenes}
@@ -86,21 +59,6 @@ async def detalle_proyecto(proyecto_id: uuid.UUID, db: AsyncSession = Depends(ge
 # Para "desactivar" un proyecto se manda estado=ANTERIOR (sigue visible en la pestaña
 # "Proyectos anteriores"). Borrar lo elimina definitivamente.
 # =====================================================================
-
-async def _ciudad_id(db: AsyncSession, ciudad_id: int | None) -> int:
-    if ciudad_id is not None:
-        if await db.get(Ciudad, ciudad_id) is None:
-            raise HTTPException(status_code=400, detail="La ciudad no existe")
-        return ciudad_id
-    # Por default Monterrey (o la primera ciudad activa si no existiera)
-    stmt = select(Ciudad.id).where(Ciudad.activa.is_(True)).order_by(
-        (Ciudad.nombre != "Monterrey"), Ciudad.id
-    ).limit(1)
-    encontrada = await db.scalar(stmt)
-    if encontrada is None:
-        raise HTTPException(status_code=400, detail="No hay ciudades registradas; corre el seed")
-    return encontrada
-
 
 async def _aplicar(db: AsyncSession, proyecto: Proyecto, datos: ProyectoGuardar) -> None:
     # Validar imágenes ANTES de tocar el proyecto: si alguna no existe, responde 422 y no cambia nada
