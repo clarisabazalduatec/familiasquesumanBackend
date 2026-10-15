@@ -1,0 +1,107 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: familias_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configura POSTGRES_PASSWORD en Dokploy}
+      POSTGRES_DB: familias_que_suman
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familias_user -d familias_que_suman"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  almacen:
+    image: rustfs/rustfs:1.0.1
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:?Configura S3_ACCESS_KEY en Dokploy}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?Configura S3_SECRET_KEY en Dokploy}
+    volumes:
+      - objetos:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Configura DATABASE_URL en Dokploy}
+      DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:?Configura DATABASE_URL_SYNC en Dokploy}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Configura JWT_SECRET_KEY en Dokploy}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:?Configura JWT_ALGORITHM en Dokploy}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:?Configura JWT_EXPIRE_MINUTES en Dokploy}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Configura GEMINI_API_KEY en Dokploy}
+      GEMINI_MODEL: ${GEMINI_MODEL:?Configura GEMINI_MODEL en Dokploy}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Configura S3_ACCESS_KEY en Dokploy}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Configura S3_SECRET_KEY en Dokploy}
+      S3_ENDPOINT: http://almacen:9000
+    depends_on:
+      db:
+        condition: service_healthy
+      almacen:
+        condition: service_healthy
+    volumes:
+      - media_data:/code/media
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoreo"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles: ["monitoreo"]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?Configura GRAFANA_ADMIN_USER en Dokploy}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Configura GRAFANA_ADMIN_PASSWORD en Dokploy}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    profiles: ["monitoreo"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+
+volumes:
+  postgres_data:
+  media_data:
+  objetos:
+  prometheus_data:
+  grafana_data:
