@@ -1,46 +1,111 @@
-import google.generativeai as genai
+import asyncio
+import logging
 from time import perf_counter
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+import os
+
+from google.api_core import exceptions as gexc
+from google.api_core import retry_async
+from google.api_core.retry import if_exception_type
+from google.api_core import retry as gretry
+
+import google.generativeai as genai
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.security import obtener_usuario_opcional
+
+from app import asistente_herramientas as herramientas
+from app.asistente_prompt import instrucciones_sistema
 from app.config import settings
 from app.database import get_db
-from app.models import MensajeChat, Usuario
+from app.metrics import CHATBOT_REQUEST_DURATION, CHATBOT_REQUESTS
+from app.models import Usuario
 from app.schemas import ChatMensajeEntrada, ChatMensajeRespuesta
-from app.security import obtener_usuario_actual
-from app.metrics import CHATBOT_REQUESTS, CHATBOT_REQUEST_DURATION
+from app.security import obtener_usuario_opcional
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+log = logging.getLogger("uvicorn.error")  # el logger que uvicorn sí imprime en docker logs
 
 genai.configure(api_key=settings.gemini_api_key)
 
-INSTRUCCIONES_SISTEMA = """
-Eres el Asistente Comunitario de la app Familias que Suman, una plataforma que conecta
-familias con oportunidades de voluntariado y donación en Monterrey, NL.
-
-La app tiene estas secciones:
-- Actividades en Familia: eventos de voluntariado con cupo limitado, se pueden inscribir o entrar a lista de espera.
-- Quiero Donar: donaciones en especie (ropa, alimentos, juguetes) o dinero a campañas activas.
-- Proyectos: causas con metas específicas y seguimiento de avance.
-- Directorio de Visiteo: asilos, casas hogar y comedores que se pueden visitar en persona.
-
-Tu tono es cálido, cercano y breve — como alguien de la comunidad, no un bot corporativo.
-Respondes siempre en español.
-
-Si te preguntan algo fuera de estos temas (tarea de la escuela, clima, temas no
-relacionados a la app), redirige amablemente hacia cómo puedes ayudar dentro de la app. No hablaras nunca de nada que no tenga que ver con
-la aplicacion. 
-
-
-No inventes datos específicos (cupos exactos, fechas, montos) que no te hayan dado — si
-no tienes esa información, sugiere revisar la sección correspondiente en la app.
-"""
-
-modelo_gemini = genai.GenerativeModel(
-    model_name="gemini-3.1-flash-lite",
-    system_instruction=INSTRUCCIONES_SISTEMA,
+MODELO = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+MAX_MENSAJE = 1000      # caracteres que acepta del usuario
+MAX_HISTORIAL = 10      # mensajes previos (de la pantalla) que se mandan como contexto
+MAX_RONDAS = 4          # máximo de idas y vueltas con herramientas por mensaje
+TIEMPO_GEMINI = 20      # segundos máximos por llamada a Gemini
+TIEMPO_TOTAL = 45       # segundos máximos por mensaje (la app espera 60)
+RESPUESTA_FALLA = (
+    "No fue posible obtener una respuesta en este momento. Intenta de nuevo en unos minutos "
+    "o consulta directamente la sección correspondiente de la app."
 )
+
+
+def _llamadas(respuesta) -> list:
+    """Las function_call que pidió el modelo en esta respuesta (puede pedir varias)."""
+    try:
+        partes = respuesta.candidates[0].content.parts
+    except (IndexError, AttributeError):
+        return []
+    return [p.function_call for p in partes if p.function_call]
+
+
+def _texto(respuesta) -> str:
+    try:
+        return (respuesta.text or "").strip()
+    except Exception:  # respuesta bloqueada o sin texto
+        return ""
+
+
+def _aviso_reintento(error: Exception) -> None:
+    log.warning("chatbot Gemini no disponible (%s), reintentando...", type(error).__name__)
+
+
+# Si Gemini está saturado (503) se reintenta rápido y queda en el log;
+# antes la librería reintentaba en silencio hasta por 10 minutos.
+REINTENTOS = gretry.Retry(
+    predicate=if_exception_type(gexc.ServiceUnavailable),
+    initial=0.5, maximum=2.0, multiplier=2.0,
+    timeout=TIEMPO_GEMINI,
+    on_error=_aviso_reintento,
+)
+
+
+
+
+async def _gemini(chat, contenido):
+    return await asyncio.wait_for(
+        asyncio.to_thread(
+            chat.send_message, contenido,
+            request_options={"retry": REINTENTOS, "timeout": TIEMPO_GEMINI},
+        ),
+        timeout=TIEMPO_GEMINI + 2,
+    )
+
+async def responder(chat, mensaje: str, db: AsyncSession, usuario: Usuario | None) -> str:
+    """Bucle de function calling: el modelo pide herramientas, el backend las ejecuta
+    y le regresa los resultados, hasta que el modelo contesta con texto."""
+    t0 = perf_counter()
+    respuesta = await _gemini(chat, mensaje)
+    log.info("chatbot gemini ronda=0 %.1fs", perf_counter() - t0)
+    for ronda in range(1, MAX_RONDAS + 1):
+        llamadas = _llamadas(respuesta)
+        if not llamadas:
+            break
+        partes = []
+        for llamada in llamadas:
+            args = {k: v for k, v in (llamada.args or {}).items()}
+            log.info("chatbot herramienta=%s args=%s", llamada.name, args)
+            try:
+                resultado = await herramientas.ejecutar(llamada.name, args, db, usuario)
+            except Exception:
+                log.exception("Falló la herramienta %s", llamada.name)
+                resultado = {"error": "No se pudo consultar esta información en este momento."}
+            partes.append(genai.protos.Part(
+                function_response=genai.protos.FunctionResponse(name=llamada.name, response=resultado)
+            ))
+        t = perf_counter()
+        respuesta = await _gemini(chat, partes)
+        log.info("chatbot gemini ronda=%d %.1fs", ronda, perf_counter() - t)
+    log.info("chatbot total %.1fs", perf_counter() - t0)
+    return _texto(respuesta)
 
 
 @router.post("", response_model=ChatMensajeRespuesta)
@@ -49,35 +114,38 @@ async def enviar_mensaje(
     usuario: Usuario | None = Depends(obtener_usuario_opcional),
     db: AsyncSession = Depends(get_db),
 ):
-    historial_gemini = []
-    if usuario is not None:
-        resultado = await db.execute(
-            select(MensajeChat)
-            .where(MensajeChat.usuario_id == usuario.id)
-            .order_by(MensajeChat.creado_en.desc())
-            .limit(10)
-        )
-        historial = list(reversed(resultado.scalars().all()))
-        historial_gemini = [
-            {"role": "user" if m.rol == "usuario" else "model", "parts": [m.contenido]}
-            for m in historial
-        ]
+    mensaje = entrada.mensaje.strip()
+    if not mensaje:
+        raise HTTPException(status_code=422, detail="Escribe un mensaje")
+    if len(mensaje) > MAX_MENSAJE:
+        raise HTTPException(status_code=422, detail=f"El mensaje es muy largo (máximo {MAX_MENSAJE} caracteres)")
 
-    chat = modelo_gemini.start_chat(history=historial_gemini)
+    # Sin memoria guardada: el contexto es solo la conversación que la app tiene en pantalla.
+    # Al salir del chat la app la borra, y el backend no guarda nada.
+    historial_gemini = [
+        {"role": "user" if t.rol == "usuario" else "model", "parts": [t.contenido]}
+        for t in entrada.historial[-MAX_HISTORIAL:]
+        if t.contenido.strip()
+    ]
+
+    # El modelo se crea por mensaje: las instrucciones llevan la fecha y si hay sesión.
+    modelo = genai.GenerativeModel(
+        model_name=MODELO,
+        system_instruction=instrucciones_sistema(usuario),
+        tools=[herramientas.DECLARACIONES],
+        generation_config={"temperature": 0.4, "max_output_tokens": 700},
+    )
+    chat = modelo.start_chat(history=historial_gemini)
+
     inicio = perf_counter()
     try:
-        respuesta_gemini = chat.send_message(entrada.mensaje)
-        texto_respuesta = respuesta_gemini.text
+        texto_respuesta = await asyncio.wait_for(responder(chat, mensaje, db, usuario), timeout=TIEMPO_TOTAL)
+        CHATBOT_REQUESTS.labels("success").inc()
     except Exception:
+        log.exception("Falló la llamada a Gemini")
         CHATBOT_REQUESTS.labels("failure").inc()
+        texto_respuesta = ""
+    finally:
         CHATBOT_REQUEST_DURATION.observe(perf_counter() - inicio)
-        raise
-    CHATBOT_REQUESTS.labels("success").inc()
-    CHATBOT_REQUEST_DURATION.observe(perf_counter() - inicio)
 
-    if usuario is not None:
-        db.add(MensajeChat(usuario_id=usuario.id, rol="usuario", contenido=entrada.mensaje))
-        db.add(MensajeChat(usuario_id=usuario.id, rol="asistente", contenido=texto_respuesta))
-        await db.commit()
-
-    return ChatMensajeRespuesta(respuesta=texto_respuesta)
+    return ChatMensajeRespuesta(respuesta=texto_respuesta or RESPUESTA_FALLA)
