@@ -3,7 +3,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import EstadoPublicacion, TipoPublicacion
 from app.schemas_catalogo import CategoriaOut
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.almacen import url_publica
 
 ## base comun
 
@@ -25,6 +26,11 @@ class ImagenPublicacion(_Salida):
     url: str
     orden: int
 
+    @field_validator("url")
+    @classmethod
+    def _url_publica(cls, v):
+        # En la base se guarda la clave del almacén ("abc.jpg"); la app necesita "/imagenes/abc.jpg"
+        return url_publica(v)
 
 ## crear publicaciones
 

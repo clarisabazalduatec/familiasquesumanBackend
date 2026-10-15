@@ -517,6 +517,44 @@ async def listar_comentarios(
     return (await db.execute(stmt)).scalars().all()
 
 
+##mis publicaciones - consultar estado
+@router.get("/mias", response_model=list[PublicacionDetalle])
+async def listar_mis_publicaciones(
+    pag: Paginacion = Depends(),
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(Publicacion)
+        .where(
+            Publicacion.autor_id == usuario.id,
+            Publicacion.tipo == TipoPublicacion.COMUNIDAD,
+        )
+        .order_by(Publicacion.creado_en.desc())
+        .limit(pag.limit)
+        .offset(pag.offset)
+    )
+
+    publicaciones = (await db.execute(stmt)).scalars().all()
+    resultado = []
+
+    for publicacion in publicaciones:
+        respuesta = PublicacionDetalle.model_validate(publicacion)
+
+        respuesta.total_likes = len(publicacion.likes)
+        respuesta.total_comentarios = sum(
+            1 for comentario in publicacion.comentarios if comentario.visible
+        )
+        respuesta.me_gusta = any(
+            like.usuario_id == usuario.id for like in publicacion.likes
+        )
+
+        resultado.append(respuesta)
+
+    return resultado
+
+
+
 ## detalle de publicación de comunidad
 @router.get(
     "/{publicacion_id}",
@@ -578,43 +616,6 @@ async def detalle_publicacion(
     respuesta.me_gusta = me_gusta
 
     return respuesta
-
-
-##mis publicaciones - consultar estado
-@router.get("/mias", response_model=list[PublicacionDetalle])
-async def listar_mis_publicaciones(
-    pag: Paginacion = Depends(),
-    usuario: Usuario = Depends(obtener_usuario_actual),
-    db: AsyncSession = Depends(get_db),
-):
-    stmt = (
-        select(Publicacion)
-        .where(
-            Publicacion.autor_id == usuario.id,
-            Publicacion.tipo == TipoPublicacion.COMUNIDAD,
-        )
-        .order_by(Publicacion.creado_en.desc())
-        .limit(pag.limit)
-        .offset(pag.offset)
-    )
-
-    publicaciones = (await db.execute(stmt)).scalars().all()
-    resultado = []
-
-    for publicacion in publicaciones:
-        respuesta = PublicacionDetalle.model_validate(publicacion)
-
-        respuesta.total_likes = len(publicacion.likes)
-        respuesta.total_comentarios = sum(
-            1 for comentario in publicacion.comentarios if comentario.visible
-        )
-        respuesta.me_gusta = any(
-            like.usuario_id == usuario.id for like in publicacion.likes
-        )
-
-        resultado.append(respuesta)
-
-    return resultado
 
 
 
