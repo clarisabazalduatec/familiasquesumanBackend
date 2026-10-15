@@ -1,11 +1,9 @@
+import asyncio
 import logging
 from time import perf_counter
-import asyncio
-
 
 import google.generativeai as genai
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import asistente_herramientas as herramientas
@@ -13,21 +11,21 @@ from app.asistente_prompt import instrucciones_sistema
 from app.config import settings
 from app.database import get_db
 from app.metrics import CHATBOT_REQUEST_DURATION, CHATBOT_REQUESTS
-from app.models import MensajeChat, Usuario
+from app.models import Usuario
 from app.schemas import ChatMensajeEntrada, ChatMensajeRespuesta
 from app.security import obtener_usuario_opcional
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-log = logging.getLogger("uvicorn.error") 
+log = logging.getLogger("uvicorn.error")  # el logger que uvicorn sí imprime en docker logs
 
 genai.configure(api_key=settings.gemini_api_key)
 
 MODELO = "gemini-3.1-flash-lite"
 MAX_MENSAJE = 1000      # caracteres que acepta del usuario
-MAX_HISTORIAL = 10      # mensajes previos que se mandan como contexto
-MAX_RONDAS = 4
+MAX_HISTORIAL = 10      # mensajes previos (de la pantalla) que se mandan como contexto
+MAX_RONDAS = 4          # máximo de idas y vueltas con herramientas por mensaje
 TIEMPO_GEMINI = 20      # segundos máximos por llamada a Gemini
-TIEMPO_TOTAL = 45       # segundos máximos por mensaje (la app espera 60)          # máximo de idas y vueltas con herramientas por mensaje
+TIEMPO_TOTAL = 45       # segundos máximos por mensaje (la app espera 60)
 RESPUESTA_FALLA = (
     "Perdón, tuve un problema para responderte en este momento. "
     "Intenta de nuevo en un ratito o revisa directamente la sección de la app."
@@ -95,20 +93,13 @@ async def enviar_mensaje(
     if len(mensaje) > MAX_MENSAJE:
         raise HTTPException(status_code=422, detail=f"El mensaje es muy largo (máximo {MAX_MENSAJE} caracteres)")
 
-    # Historial: solo el de ESTA persona. Los invitados no tienen historial guardado.
-    historial_gemini = []
-    if usuario is not None:
-        resultado = await db.execute(
-            select(MensajeChat)
-            .where(MensajeChat.usuario_id == usuario.id)
-            .order_by(MensajeChat.creado_en.desc())
-            .limit(MAX_HISTORIAL)
-        )
-        historial = list(reversed(resultado.scalars().all()))
-        historial_gemini = [
-            {"role": "user" if m.rol == "usuario" else "model", "parts": [m.contenido]}
-            for m in historial
-        ]
+    # Sin memoria guardada: el contexto es solo la conversación que la app tiene en pantalla.
+    # Al salir del chat la app la borra, y el backend no guarda nada.
+    historial_gemini = [
+        {"role": "user" if t.rol == "usuario" else "model", "parts": [t.contenido]}
+        for t in entrada.historial[-MAX_HISTORIAL:]
+        if t.contenido.strip()
+    ]
 
     # El modelo se crea por mensaje: las instrucciones llevan la fecha y si hay sesión.
     modelo = genai.GenerativeModel(
@@ -121,7 +112,6 @@ async def enviar_mensaje(
 
     inicio = perf_counter()
     try:
-            
         texto_respuesta = await asyncio.wait_for(responder(chat, mensaje, db, usuario), timeout=TIEMPO_TOTAL)
         CHATBOT_REQUESTS.labels("success").inc()
     except Exception:
@@ -131,13 +121,4 @@ async def enviar_mensaje(
     finally:
         CHATBOT_REQUEST_DURATION.observe(perf_counter() - inicio)
 
-    if not texto_respuesta:
-        # No se guarda en el historial para no "ensuciar" el contexto de la siguiente pregunta.
-        return ChatMensajeRespuesta(respuesta=RESPUESTA_FALLA)
-
-    if usuario is not None:
-        db.add(MensajeChat(usuario_id=usuario.id, rol="usuario", contenido=mensaje))
-        db.add(MensajeChat(usuario_id=usuario.id, rol="asistente", contenido=texto_respuesta))
-        await db.commit()
-
-    return ChatMensajeRespuesta(respuesta=texto_respuesta)
+    return ChatMensajeRespuesta(respuesta=texto_respuesta or RESPUESTA_FALLA)

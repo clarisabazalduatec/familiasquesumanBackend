@@ -1,8 +1,8 @@
 import uuid
-from pydantic import BaseModel, EmailStr, ConfigDict
 
 from app.models.enums import RolUsuario
-
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class UsuarioCrear(BaseModel):
     nombre: str
@@ -32,9 +32,16 @@ class TokenRespuesta(BaseModel):
     usuario: UsuarioRespuesta
 
 
+class ChatTurno(BaseModel):
+    """Un mensaje anterior de la conversación que está en pantalla."""
+    rol: Literal["usuario", "asistente"]
+    contenido: str = Field(max_length=4000)
+
+
 class ChatMensajeEntrada(BaseModel):
     mensaje: str
-
+    # La app manda los mensajes que hay en pantalla; el backend no guarda conversaciones.
+    historial: list[ChatTurno] = Field(default_factory=list, max_length=40)
 
 class ChatMensajeRespuesta(BaseModel):
     respuesta: str
