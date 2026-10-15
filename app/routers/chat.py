@@ -6,6 +6,7 @@ import os
 from google.api_core import exceptions as gexc
 from google.api_core import retry_async
 from google.api_core.retry import if_exception_type
+from google.api_core import retry as gretry
 
 import google.generativeai as genai
 from fastapi import APIRouter, Depends, HTTPException
@@ -59,7 +60,7 @@ def _aviso_reintento(error: Exception) -> None:
 
 # Si Gemini está saturado (503) se reintenta rápido y queda en el log;
 # antes la librería reintentaba en silencio hasta por 10 minutos.
-REINTENTOS = retry_async.AsyncRetry(
+REINTENTOS = gretry.Retry(
     predicate=if_exception_type(gexc.ServiceUnavailable),
     initial=0.5, maximum=2.0, multiplier=2.0,
     timeout=TIEMPO_GEMINI,
@@ -67,9 +68,14 @@ REINTENTOS = retry_async.AsyncRetry(
 )
 
 
+
+
 async def _gemini(chat, contenido):
     return await asyncio.wait_for(
-        chat.send_message_async(contenido, request_options={"retry": REINTENTOS, "timeout": TIEMPO_GEMINI}),
+        asyncio.to_thread(
+            chat.send_message, contenido,
+            request_options={"retry": REINTENTOS, "timeout": TIEMPO_GEMINI},
+        ),
         timeout=TIEMPO_GEMINI + 2,
     )
 
