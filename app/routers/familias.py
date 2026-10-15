@@ -27,6 +27,7 @@ from app.schemas_familia import (
     MenorCrear,
     MenorOut,
 )
+from app.inscripciones_servicio import cancelar_inscripciones_vacias, quitar_adulto_de_inscripciones_futuras
 from app.security import obtener_usuario_actual
 
 router = APIRouter(prefix="/familias", tags=["familia"])
@@ -135,6 +136,10 @@ async def salir_de_familia(
     # Bloquea la fila de la familia: si los dos últimos adultos se salen al mismo
     # tiempo, el segundo espera al primero y sí detecta que es el último.
     await db.execute(select(Familia.id).where(Familia.id == familia_id).with_for_update())
+    
+    # Deja de ir a las actividades futuras de la familia que abandona
+    await quitar_adulto_de_inscripciones_futuras(db, usuario.id, familia_id)
+    await cancelar_inscripciones_vacias(db, familia_id)
 
     usuario.familia_id = None
     usuario.parentesco = None  # el parentesco era relativo a esa familia
@@ -188,6 +193,8 @@ async def borrar_menor(
 ):
     menor = await _menor_de_mi_familia(db, usuario, menor_id)
     await db.delete(menor)
+    await db.flush()  # CASCADE quita al menor de sus inscripciones
+    await cancelar_inscripciones_vacias(db, menor.familia_id)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -7,13 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import (
-    Actividad, AmbitoCategoria, Categoria, IniciativaImagen, Organizacion, TipoIniciativa, Usuario,
+    Actividad, AmbitoCategoria, Categoria, IniciativaImagen, Organizacion, TipoIniciativa, Usuario, EstadoInscripcion, InscripcionActividad
 )
 from app.routers._comun import (
     Paginacion, _borrar_objetos, _ciudad_id, _claves_validas, obtener_o_404,
 )
 from app.schemas_catalogo import ActividadAdmin, ActividadDetalle, ActividadGuardar, ActividadResumen
 from app.security import requiere_admin
+
+from app.inscripciones_servicio import bloquear_actividad, contar_ocupados
 
 router = APIRouter(prefix="/actividades", tags=["actividades"])
 
@@ -137,8 +139,16 @@ async def editar_actividad(
     db: AsyncSession = Depends(get_db),
 ):
     actividad = await db.get(Actividad, actividad_id)
-    if actividad is None:
+    # Candado: que nadie se inscriba mientras se valida el cupo nuevo
+    if not await bloquear_actividad(db, actividad_id):
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    actividad = await db.get(Actividad, actividad_id)
+    ocupados = await contar_ocupados(db, actividad_id)
+    if datos.cupo_total < ocupados:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ya hay {ocupados} personas inscritas; el cupo no puede ser menor a eso",
+        )
     antes = _claves_de(actividad)
     await _aplicar(db, actividad, datos)
     despues = set(_claves_de(actividad))
@@ -156,7 +166,19 @@ async def borrar_actividad(
     actividad = await db.get(Actividad, actividad_id)
     if actividad is None:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
-    # TODO (fase de participaciones): responder 409 si ya hay inscritos
+    
+    inscritas = await db.scalar(
+        select(func.count()).select_from(InscripcionActividad).where(
+            InscripcionActividad.actividad_id == actividad_id,
+            InscripcionActividad.estado == EstadoInscripcion.CONFIRMADA,
+        )
+    )
+    if inscritas:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Hay {inscritas} familia(s) inscrita(s); desactívala en lugar de borrarla",
+        )
+    
     claves = _claves_de(actividad)
     await db.delete(actividad)
     await db.commit()

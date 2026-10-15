@@ -36,7 +36,9 @@ from app.models.comunidad import (
     Comentario,
     ComentarioLike,
 )
-from app.models.enums import TipoPublicacion, EstadoPublicacion
+from app.models.enums import TipoPublicacion, EstadoPublicacion, EstadoAsistencia, EstadoInscripcion
+from app.models.inscripciones import InscripcionActividad, InscripcionParticipante
+
 
 __all__ = [
     "Actividad", "AmbitoCategoria", "Categoria", "CentroNecesidad", "CentroVisiteo",
@@ -47,4 +49,5 @@ __all__ = [
     "TipoApoyo", "TipoCentro", "TipoIniciativa", "Usuario","Publicacion",
     "PublicacionImagen","PublicacionLike","Comentario","ComentarioLike",
     "TipoPublicacion","EstadoPublicacion",
+    "InscripcionActividad", "InscripcionParticipante", "EstadoAsistencia", "EstadoInscripcion",
 ]

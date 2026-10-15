@@ -24,7 +24,8 @@ from app.routers import (
     invitaciones,
     proyectos,
     usuarios,
-    imagenes
+    imagenes,
+    inscripciones
 )
 
 from app import almacen
@@ -78,6 +79,7 @@ app.include_router(familias.router)
 app.include_router(invitaciones.router)
 app.include_router(catalogo.router)
 app.include_router(actividades.router)
+app.include_router(inscripciones.router)
 app.include_router(proyectos.router)
 app.include_router(donaciones.router)
 app.include_router(centros.router)
