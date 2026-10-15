@@ -81,10 +81,11 @@ class Actividad(Iniciativa):
 
     categoria: Mapped[Categoria] = relationship(lazy="selectin")
 
+    # lugares_ocupados se define en app/models/inscripciones.py (column_property):
+    # cuenta participantes de inscripciones CONFIRMADAS y se calcula en cada consulta.
     @property
     def plazas_disponibles(self) -> int:
-        # TODO (fase de participaciones): cupo_total - asistentes confirmados
-        return self.cupo_total
+        return max(self.cupo_total - (self.lugares_ocupados or 0), 0)
 
     __table_args__ = (
         CheckConstraint("cupo_total > 0", name="ck_actividades_cupo_positivo"),

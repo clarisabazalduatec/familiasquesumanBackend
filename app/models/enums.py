@@ -73,6 +73,16 @@ class EstadoPublicacion(str, enum.Enum):
     APROBADA = "APROBADA"
     RECHAZADA = "RECHAZADA"
 
+##INSCRIPCIONES A ACTIVIDADES
+class EstadoInscripcion(str, enum.Enum):
+    CONFIRMADA = "CONFIRMADA"
+    CANCELADA = "CANCELADA"
+
+
+class EstadoAsistencia(str, enum.Enum):
+    PENDIENTE = "PENDIENTE"
+    ASISTIO = "ASISTIO"
+    FALTO = "FALTO"
 
 
 def enum_col(enum_cls: type[enum.Enum], nombre: str) -> Enum:
