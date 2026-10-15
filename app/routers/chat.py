@@ -51,10 +51,12 @@ cliente = genai.Client(
 
 
 def _texto(respuesta) -> str:
+    """Solo las partes de texto de la respuesta (sin firmas ni "pensamientos")."""
     try:
-        return (respuesta.text or "").strip()
-    except Exception:  # respuesta bloqueada o sin texto
+        partes = respuesta.candidates[0].content.parts or []
+    except (IndexError, AttributeError, TypeError):
         return ""
+    return "".join(p.text for p in partes if p.text and not p.thought).strip()
 
 
 async def _gemini(chat, contenido):
@@ -137,6 +139,9 @@ async def enviar_mensaje(
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         temperature=0.4,
         max_output_tokens=2048,  # los modelos que "piensan" gastan parte de esto en pensar
+        # Gemini 3 "piensa" mucho por default (a veces >20 s y Google corta con 504).
+        # Para buscar y resumir datos de la app basta con poco.
+        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
     )
     chat = cliente.aio.chats.create(model=MODELO, config=configuracion, history=historial)
 
