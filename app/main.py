@@ -25,7 +25,8 @@ from app.routers import (
     proyectos,
     usuarios,
     imagenes,
-    inscripciones
+    inscripciones,
+    notificaciones
 )
 
 from app import almacen
@@ -84,6 +85,7 @@ app.include_router(proyectos.router)
 app.include_router(donaciones.router)
 app.include_router(centros.router)
 app.include_router(comunidad.router)
+app.include_router(notificaciones.router)
 
 # Imágenes subidas por el admin: /media/<archivo>
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")

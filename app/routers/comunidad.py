@@ -21,6 +21,10 @@ from app.models import (
     Comentario,
 )
 from app.routers._comun import Paginacion
+from app.models import DestinoNotificacion, TipoNotificacion
+from app.notificaciones_servicio import (
+    nombre_publicacion, notificar, notificar_admins, notificar_like, notificar_usuarios,
+)
 from app.schemas_comunidad import PublicacionDetalle
 from app.schemas_comunidad import PublicacionCrear, PublicacionResumen, PublicacionRechazar, AvisoOficialCrear,ComentarioCrear,ComentarioRespuesta
 from app.security import (
@@ -132,6 +136,14 @@ async def crear_publicacion(
     )
 
     db.add(publicacion)
+    await db.flush()  # para tener el id
+    # Admin: hay una publicación nueva que revisar
+    await notificar_admins(
+        db, TipoNotificacion.PUBLICACION_POR_REVISAR,
+        "Nueva publicación por revisar",
+        f"{usuario.nombre} envió «{nombre_publicacion(publicacion)}».",
+        DestinoNotificacion.MODERACION, publicacion.id,
+    )
     await db.commit()
     stmt = select(Publicacion).where(Publicacion.id == publicacion.id)
     return (await db.execute(stmt)).scalar_one()
@@ -198,6 +210,13 @@ async def aprobar_publicacion(
     publicacion.publicada_en = ahora
     publicacion.motivo_rechazo = None
 
+    await notificar(
+        db, publicacion.autor_id, TipoNotificacion.PUBLICACION_APROBADA,
+        "Tu publicación fue aprobada",
+        f"«{nombre_publicacion(publicacion)}» ya está visible en Comunidad.",
+        DestinoNotificacion.PUBLICACION, publicacion.id,
+    )
+
     await db.commit()
 
     stmt = select(Publicacion).where(
@@ -245,6 +264,13 @@ async def rechazar_publicacion(
     publicacion.revisado_por = admin.id
     publicacion.revisado_en = datetime.now(timezone.utc)
     publicacion.publicada_en = None
+
+    await notificar(
+        db, publicacion.autor_id, TipoNotificacion.PUBLICACION_RECHAZADA,
+        "Tu publicación no fue aprobada",
+        f"«{nombre_publicacion(publicacion)}»: {datos.motivo_rechazo}",
+        DestinoNotificacion.MIS_PUBLICACIONES, publicacion.id,
+    )
 
     await db.commit()
 
@@ -299,6 +325,14 @@ async def crear_aviso_oficial(
     )
 
     db.add(aviso)
+    await db.flush()  # para tener el id
+    # Todos los usuarios: nuevo aviso oficial
+    await notificar_usuarios(
+        db, TipoNotificacion.AVISO_OFICIAL,
+        "Nuevo aviso de Familias que Suman",
+        aviso.titulo,
+        DestinoNotificacion.AVISO, aviso.id,
+    )
     await db.commit()
 
     stmt = select(Publicacion).where(
@@ -364,6 +398,8 @@ async def dar_like_publicacion(
                 usuario_id=usuario.id
             )
         )
+        await db.flush()  # para que el conteo de likes ya incluya este
+        await notificar_like(db, publicacion, usuario)
         await db.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -472,6 +508,15 @@ async def crear_comentario(
     )
 
     db.add(comentario)
+    if publicacion.autor_id != usuario.id:
+        texto = " ".join(datos.contenido.split())
+        await notificar(
+            db, publicacion.autor_id, TipoNotificacion.NUEVO_COMENTARIO,
+            "Nuevo comentario",
+            f"{usuario.nombre.split(' ')[0]} comentó «{nombre_publicacion(publicacion)}»: "
+            f"{texto[:80]}{'…' if len(texto) > 80 else ''}",
+            DestinoNotificacion.PUBLICACION, publicacion.id,
+        )
     await db.commit()
 
     stmt = select(Comentario).where(

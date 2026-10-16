@@ -23,6 +23,8 @@ from app.models import (
     InscripcionActividad,
     InscripcionParticipante,
     Usuario,
+    DestinoNotificacion,
+    TipoNotificacion,
 )
 from app.schemas_inscripciones import (
     AsistenciaGuardar,
@@ -31,6 +33,7 @@ from app.schemas_inscripciones import (
     InscripcionOut,
     MiInscripcionOut,
 )
+from app.notificaciones_servicio import notificar_admins
 from app.security import obtener_usuario_actual, requiere_admin
 
 router = APIRouter(tags=["inscripciones"])
@@ -99,6 +102,18 @@ def _verificar_cupo(actividad: Actividad, ocupados: int, solicitados: int) -> No
             detail=f"Solo quedan {libres} lugar{'es' if libres != 1 else ''}; seleccionaste {solicitados}",
         )
 
+async def _avisar_si_se_lleno(db: AsyncSession, actividad: Actividad, ocupados_ahora: int) -> None:
+    """Admin: la actividad se quedó sin lugares. La clave lleva el cupo: si el admin lo
+    amplía y se vuelve a llenar, vuelve a avisar; mientras tanto no se repite."""
+    if ocupados_ahora >= actividad.cupo_total:
+        await notificar_admins(
+            db, TipoNotificacion.ACTIVIDAD_LLENA,
+            "Actividad sin lugares",
+            f"«{actividad.titulo}» llenó su cupo "
+            f"({actividad.cupo_total} lugar{'es' if actividad.cupo_total != 1 else ''}).",
+            DestinoNotificacion.ACTIVIDAD, actividad.id,
+            clave=f"cupo_lleno:{actividad.id}:{actividad.cupo_total}",
+        )
 
 async def _recargar(db: AsyncSession, inscripcion_id: uuid.UUID) -> InscripcionActividad:
     stmt = (
@@ -132,7 +147,9 @@ async def inscribirse(
             status_code=409, detail="Tu familia ya está inscrita; puedes modificar quiénes asisten"
         )
     await _validar_personas(db, familia_id, datos)
-    _verificar_cupo(actividad, await contar_ocupados(db, actividad_id), datos.total)
+    ocupados = await contar_ocupados(db, actividad_id)
+    _verificar_cupo(actividad, ocupados, datos.total)
+    await _avisar_si_se_lleno(db, actividad, ocupados + datos.total)
 
     inscripcion = InscripcionActividad(
         actividad_id=actividad_id,
@@ -180,7 +197,9 @@ async def cambiar_participantes(
         raise HTTPException(status_code=404, detail="Tu familia no está inscrita en esta actividad")
     await _validar_personas(db, familia_id, datos)
     # Lo que ocupan las DEMÁS familias + lo que pide esta ahora
-    _verificar_cupo(actividad, await contar_ocupados(db, actividad_id, inscripcion.id), datos.total)
+    ocupados_otras = await contar_ocupados(db, actividad_id, inscripcion.id)
+    _verificar_cupo(actividad, ocupados_otras, datos.total)
+    await _avisar_si_se_lleno(db, actividad, ocupados_otras + datos.total)
 
     # Diferencia en vez de reemplazar todo: se conservan las filas de quien sigue
     # (y su asistencia) y no se choca con los UNIQUE al reinsertar a la misma persona.
