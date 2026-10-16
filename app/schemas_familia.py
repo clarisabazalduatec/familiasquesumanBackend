@@ -1,8 +1,9 @@
 """Esquemas de perfil, familia e invitaciones."""
 import uuid
 from datetime import date, datetime
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
+from app.almacen import url_publica
 
 from app.models.enums import EstadoInvitacion, Parentesco, RolUsuario
 
@@ -10,9 +11,17 @@ from app.models.enums import EstadoInvitacion, Parentesco, RolUsuario
 class _Salida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+class _ConFoto(_Salida):
+    """Salida de un usuario con su foto de perfil (clave del almacén -> "/imagenes/...")."""
+    foto_url: str | None = None
 
+    @field_validator("foto_url")
+    @classmethod
+    def _foto_publica(cls, v):
+        return url_publica(v)
+    
 # ---------- Perfil del usuario ----------
-class PerfilOut(_Salida):
+class PerfilOut(_ConFoto):
     id: uuid.UUID
     nombre: str
     email: EmailStr
@@ -64,7 +73,7 @@ class FamiliaActualizar(BaseModel):
     nombre: str | None = Field(None, max_length=120)
 
 
-class MiembroOut(_Salida):
+class MiembroOut(_ConFoto):
     id: uuid.UUID
     nombre: str
     email: EmailStr

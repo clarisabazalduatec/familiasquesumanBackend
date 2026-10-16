@@ -2,7 +2,9 @@ import uuid
 
 from app.models.enums import RolUsuario
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.almacen import url_publica
 
 class UsuarioCrear(BaseModel):
     nombre: str
