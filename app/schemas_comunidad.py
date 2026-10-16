@@ -15,10 +15,15 @@ class _Salida(BaseModel):
 class _Entrada(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-
 class AutorPublicacion(_Salida):
     id: uuid.UUID
     nombre: str
+    foto_url: str | None = None
+
+    @field_validator("foto_url")
+    @classmethod
+    def _foto_publica(cls, v):
+        return url_publica(v)
 
 
 class ImagenPublicacion(_Salida):
