@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+
 from app.database import get_db
 from app.models import EstadoInvitacion, Familia, FamiliaMenor, InvitacionFamilia, Usuario
 from app.schemas_familia import (
@@ -29,6 +30,8 @@ from app.schemas_familia import (
 )
 from app.inscripciones_servicio import cancelar_inscripciones_vacias, quitar_adulto_de_inscripciones_futuras
 from app.security import obtener_usuario_actual
+from app.models import DestinoNotificacion, TipoNotificacion
+from app.notificaciones_servicio import notificar
 
 router = APIRouter(prefix="/familias", tags=["familia"])
 
@@ -220,15 +223,25 @@ async def invitar_adulto(
     if invitado.familia_id is not None:
         raise HTTPException(status_code=409, detail="Esa persona ya pertenece a otra familia")
 
+    # Antes del add: una consulta con la invitación pendiente haría flush fuera del try
+    familia = await db.get(Familia, familia_id)
+    a_cual = f"la familia «{familia.nombre}»" if familia and familia.nombre else "su familia"
+
     invitacion = InvitacionFamilia(familia_id=familia_id, invitado_id=invitado.id, invitado_por_id=usuario.id)
     db.add(invitacion)
     try:
+        await db.flush()  # si ya había una invitación pendiente, falla aquí (antes de notificar)
+        await notificar(
+            db, invitado.id, TipoNotificacion.INVITACION_FAMILIA,
+            "Te invitaron a una familia",
+            f"{usuario.nombre} te invitó a unirte a {a_cual}.",
+            DestinoNotificacion.INVITACIONES, invitacion.id,
+        )
         await db.commit()
     except IntegrityError:
         # uq_invitacion_pendiente: ya hay una pendiente para esta persona
         await db.rollback()
         raise HTTPException(status_code=409, detail="Ya hay una invitación pendiente para esa persona")
-
     await db.refresh(invitacion, attribute_names=["invitado"])
     return invitacion
 

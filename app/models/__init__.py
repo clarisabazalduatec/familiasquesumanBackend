@@ -1,6 +1,7 @@
 # Importar todo aquí registra las tablas en Base.metadata (lo que necesita alembic/env.py)
 # y mantiene vigentes imports como `from app.models import Usuario`.
 from app.models.catalogo import Categoria, Ciudad, Organizacion
+from app.models.notificaciones import DestinoNotificacion, Notificacion, TipoNotificacion
 from app.models.enums import (
     AmbitoCategoria,
     EstadoInvitacion,
@@ -49,5 +50,6 @@ __all__ = [
     "TipoApoyo", "TipoCentro", "TipoIniciativa", "Usuario","Publicacion",
     "PublicacionImagen","PublicacionLike","Comentario","ComentarioLike",
     "TipoPublicacion","EstadoPublicacion",
-    "InscripcionActividad", "InscripcionParticipante", "EstadoAsistencia", "EstadoInscripcion",
+    "InscripcionActividad", "InscripcionParticipante", "EstadoAsistencia", "EstadoInscripcion", 
+    "Notificacion", "TipoNotificacion", "DestinoNotificacion",
 ]
