@@ -110,16 +110,22 @@ class DonacionOpcionOut(_Salida):
 
 class DonacionResumen(_IniciativaResumen):
     modalidad: ModalidadDonacion
+    activa: bool = True
     categoria: CategoriaOut | None = None
     meta: float | None = None
-    recaudado: float
-    opciones_disponibles: int
+    recaudado: float = 0.0
+    opciones_disponibles: int = 0
+    organizacion_nombre: str | None = None
 
 
 class DonacionDetalle(DonacionResumen):
+    organizacion_nombre: str | None = None
     descripcion_larga: str | None = None
     whatsapp: str | None = None
     condiciones_recepcion: str | None = None
+    # Campos para modalidad TIEMPO
+    fecha_limite: datetime | None = None
+    horario: str | None = None
     opciones: list[DonacionOpcionOut] = []
     # {"articulo": [...], "destinatario": [...], "condicion": [...], "metodo_entrega": [...]}
     etiquetas: dict[str, list[str]] = Field(default_factory=dict, validation_alias="etiquetas_agrupadas")
@@ -304,4 +310,41 @@ class CategoriaCrear(BaseModel):
         v = " ".join(v.split())
         if not v:
             raise ValueError("El nombre no puede estar vacío")
+        return v
+
+# ---------- Donaciones: admin ----------
+class DonacionOpcionIn(BaseModel):
+    titulo: str = Field(min_length=1, max_length=160)
+    monto: float = Field(ge=0)
+
+
+class DonacionGuardar(BaseModel):
+    """Crear (POST) o reemplazar (PUT) una donación desde el formulario de admin."""
+
+    titulo: str = Field(min_length=1, max_length=160)
+    descripcion_corta: str = Field(min_length=1, max_length=300)
+    modalidad: ModalidadDonacion = ModalidadDonacion.CAMPANA
+    ubicacion: str | None = Field(default=None, max_length=200)
+    organizacion_nombre: str | None = None
+    ciudad_id: int | None = None  # None = Monterrey (ID 1)
+    categoria_id: int | None = None
+    meta: float | None = Field(default=None, ge=0)
+    descripcion_larga: str | None = None
+    whatsapp: str | None = Field(default=None, max_length=20)
+    condiciones_recepcion: str | None = None
+    fecha_limite: datetime | None = None
+    horario: str | None = Field(default=None, max_length=100)
+    activa: bool = True
+    imagenes: list[str] = Field(default_factory=list, max_length=10)
+    opciones: list[DonacionOpcionIn] = Field(default_factory=list, max_length=10)
+    recaudado: float | None = 0.0
+
+    @field_validator(
+        "ubicacion", "descripcion_larga", "whatsapp", "condiciones_recepcion", "horario", mode="before"
+    )
+    @classmethod
+    def _vacio_es_null(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
         return v

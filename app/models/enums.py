@@ -17,6 +17,7 @@ class EstadoProyecto(str, enum.Enum):
 class ModalidadDonacion(str, enum.Enum):
     CAMPANA = "CAMPANA"
     ESPECIE = "ESPECIE"
+    TIEMPO = "TIEMPO"
 
 
 class TipoApoyo(str, enum.Enum):
