@@ -135,10 +135,15 @@ class Donacion(Iniciativa):
     )
     categoria_id: Mapped[int | None] = mapped_column(ForeignKey("categorias.id"))
     meta: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    recaudado: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0.0, nullable=False)
     descripcion_larga: Mapped[str | None] = mapped_column(Text)
     whatsapp: Mapped[str | None] = mapped_column(String(20))
-    # Para ESPECIE la dirección del centro de acopio va en iniciativas.ubicacion
     condiciones_recepcion: Mapped[str | None] = mapped_column(Text)
+
+    fecha_limite: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    horario: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    organizacion_nombre: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     categoria: Mapped[Categoria | None] = relationship(lazy="selectin")
     opciones: Mapped[list["DonacionOpcion"]] = relationship(
@@ -147,11 +152,6 @@ class Donacion(Iniciativa):
     etiquetas: Mapped[list["DonacionEtiqueta"]] = relationship(
         cascade="all, delete-orphan", order_by="DonacionEtiqueta.id", lazy="selectin"
     )
-
-    @property
-    def recaudado(self) -> float:
-        # TODO (fase de apoyos): SUM de los aportes registrados
-        return 0.0
 
     @property
     def opciones_disponibles(self) -> int:
@@ -166,6 +166,7 @@ class Donacion(Iniciativa):
 
     __table_args__ = (
         CheckConstraint("meta IS NULL OR meta >= 0", name="ck_donaciones_meta_no_negativa"),
+        CheckConstraint("recaudado >= 0", name="ck_donaciones_recaudado_no_negativo"),
     )
     __mapper_args__ = {"polymorphic_identity": TipoIniciativa.DONACION}
 
@@ -183,8 +184,6 @@ class ProyectoOpcionApoyo(Base):
 
 
 class DonacionOpcion(Base):
-    """Montos sugeridos de una campaña: 'Despensa básica — $350'."""
-
     __tablename__ = "donacion_opciones"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -196,8 +195,6 @@ class DonacionOpcion(Base):
 
 
 class DonacionEtiqueta(Base):
-    """Listas cortas de una donación en especie (artículos, destinatarios, condiciones, entrega)."""
-
     __tablename__ = "donacion_etiquetas"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -206,7 +203,6 @@ class DonacionEtiqueta(Base):
     )
     grupo: Mapped[GrupoEtiqueta] = mapped_column(enum_col(GrupoEtiqueta, "grupo_etiqueta"))
     valor: Mapped[str] = mapped_column(String(80))
-
     __table_args__ = (UniqueConstraint("donacion_id", "grupo", "valor", name="uq_donacion_etiqueta"),)
 
 
@@ -219,5 +215,4 @@ class IniciativaImagen(Base):
     )
     url: Mapped[str] = mapped_column(String(500))
     orden: Mapped[int] = mapped_column(default=0, server_default="0")
-
     iniciativa: Mapped[Iniciativa] = relationship(back_populates="imagenes")

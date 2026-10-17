@@ -98,10 +98,8 @@ def sembrar(db: Session) -> None:
                        "en nuestra comunidad. Toda ayuda es bienvenida para servir cenas calientes."),
         ),
     ])
+
     # ---------- Proyectos ----------
-    # descripcion_corta -> tarjeta de la lista y línea bajo el título del detalle
-    # acerca_de         -> "Acerca del proyecto";  descripcion_larga -> "Descripción"
-    # como_ayudar / instagram_url -> secciones opcionales del detalle
     db.add_all([
         Proyecto(
             titulo="Trazo... Escribiendo una nueva historia",
@@ -151,76 +149,79 @@ def sembrar(db: Session) -> None:
             whatsapp="5218113008725", telefono="8113008725",
         ),
     ])
-    
-    # ---------- Donaciones: campañas ----------
-    db.add_all([
-        Donacion(
-            titulo="Comedor Solidario Barrio Sur",
-            descripcion_corta=("Ayúdanos a asegurar 500 raciones semanales para familias en situación "
-                               "de vulnerabilidad."),
-            ubicacion=None, ciudad=mty, organizacion=org["fqs"],
-            modalidad=ModalidadDonacion.CAMPANA, meta=Decimal("6000"), whatsapp="528112345678",
-            descripcion_larga=("El Comedor Solidario Barrio Sur atiende a más de 120 familias "
-                               "diariamente. Con tu apoyo, aseguraremos los insumos básicos para brindar "
-                               "comidas calientes durante los próximos 3 meses.\n\nHorario de atención: "
-                               "Lunes a Viernes de 8:00 AM a 4:00 PM."),
-            imagenes=imgs("https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?q=80&w=600&auto=format&fit=crop"),
-            opciones=[
-                DonacionOpcion(titulo="Despensa básica", monto=Decimal("350")),
-                DonacionOpcion(titulo="Apoyo semanal para 1 familia", monto=Decimal("700")),
-                DonacionOpcion(titulo="Insumos para el comedor (1 día)", monto=Decimal("2500")),
-            ],
-        ),
-        Donacion(
-            titulo="Uniformes Escolares Comunitarios",
-            descripcion_corta="Dona para equipar con uniformes a 100 estudiantes de primaria en zonas rurales.",
-            ciudad=mty, organizacion=org["fqs"],
-            modalidad=ModalidadDonacion.CAMPANA, meta=Decimal("50000"), whatsapp="528112345678",
-            descripcion_larga=("Buscamos proveer un kit completo (pantalón/falda, camisa, suéter y "
-                               "zapatos) a 100 niños y niñas para que la falta de uniforme no sea un "
-                               "impedimento en su educación."),
-            imagenes=imgs("https://images.unsplash.com/photo-1503676260728-1c00da094a0b?q=80&w=600&auto=format&fit=crop"),
-        ),
-    ])
 
-    # ---------- Donaciones: en especie ----------
+    # ---------- Donaciones ----------
     def etiquetas(grupo: GrupoEtiqueta, valores: list[str]) -> list[DonacionEtiqueta]:
         return [DonacionEtiqueta(grupo=grupo, valor=v) for v in valores]
 
     db.add_all([
+        # 1. Campaña Monetaria
         Donacion(
-            titulo="Tablets para Aprender",
-            descripcion_corta=("Equipamiento del aula digital de la Escuela No. 4 para que la clase "
-                               "completa pueda aprender y crecer."),
-            ubicacion="Av. Alfonso Reyes 100, Zona Poniente, Monterrey, N.L.",
-            ciudad=mty, organizacion=org["sanber"],
-            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Electrónicos"],
-            whatsapp="8110809078",
-            condiciones_recepcion="Pantalla intacta, Wi-Fi funcional y de preferencia cargador incluido.",
-            imagenes=imgs("https://images.unsplash.com/photo-1561154464-82e9adf32764?q=80&w=600&auto=format&fit=crop"),
-            etiquetas=[
-                *etiquetas(GrupoEtiqueta.ARTICULO, ["Tablets", "Cargadores", "Electrónicos"]),
-                *etiquetas(GrupoEtiqueta.DESTINATARIO, ["Estudiantes", "Niños"]),
-                *etiquetas(GrupoEtiqueta.CONDICION, ["Nuevo", "Usado en buen estado"]),
-                *etiquetas(GrupoEtiqueta.METODO_ENTREGA, ["Entrega en el centro", "Recolección"]),
+            titulo="Destellos de Luz",
+            descripcion_corta=("Destellos de Luz A.B.P. cuenta con más de 29 años de experiencia brindando "
+                               "atención oftalmológica integral y programas educativos que impulsan la autonomía "
+                               "y calidad de vida de personas con discapacidad visual."),
+            ubicacion="Monterrey, N.L.", ciudad=mty, organizacion=org["fqs"],
+            modalidad=ModalidadDonacion.CAMPANA, categoria=c_don["Salud"],
+            meta=Decimal("35700"), recaudado=Decimal("14000"), whatsapp="8180924504",
+            descripcion_larga=(
+                "Destellos de Luz A.B.P. es una asociación con más de 29 años de trayectoria, que cuenta con "
+                "un área médica y un área educativa.\n\n"
+                "En el área Médica: brindamos atención oftalmológica integral, respaldada por un cuerpo médico "
+                "altruista especializado, desde la valoración médica hasta cirugías y tratamientos especializados, "
+                "para quienes más lo necesitan.\n\n"
+                "En el área Educativa: a través de 7 programas de educación fortalecemos las habilidades de personas "
+                "con discapacidad visual para favorecer su superación y mejorar su calidad de vida."
+            ),
+            imagenes=imgs("https://base44.app/api/apps/69ed00f78e8b6884c29526e1/files/mp/public/69ed00f78e8b6884c29526e1/cd5c3a666_PHOTO-2026-09-21-13-28-07.jpg"),
+            opciones=[
+                DonacionOpcion(titulo="Bastón para desplazamiento", monto=Decimal("700")),
+                DonacionOpcion(titulo="Computadora parlante", monto=Decimal("21000")),
+                DonacionOpcion(titulo="Cirugía", monto=Decimal("14000")),
             ],
         ),
+
+        # 2. En Especie
         Donacion(
-            titulo="Abrigos y Cobijas de Invierno",
-            descripcion_corta=("Colecta de prendas abrigadoras y cobijas limpias para apoyar a familias "
-                               "y adultos mayores del sector."),
-            ubicacion="Av. Aztlán 2304, Col. San Bernabé, Monterrey, N.L.",
-            ciudad=mty, organizacion=org["sanjose"],
-            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Ropa"],
-            whatsapp="8181234567",
-            condiciones_recepcion="Entregar prendas limpias, desinfectadas y en bolsas cerradas.",
-            imagenes=imgs("https://images.unsplash.com/photo-1434389677669-e08b4cac3105?q=80&w=600&auto=format&fit=crop"),
-            etiquetas=[
-                *etiquetas(GrupoEtiqueta.ARTICULO, ["Ropa de Invierno", "Cobijas", "Calzado"]),
-                *etiquetas(GrupoEtiqueta.DESTINATARIO, ["Familias", "Adultos Mayores", "Niños"]),
-                *etiquetas(GrupoEtiqueta.CONDICION, ["Nuevo", "Usado en buen estado"]),
-                *etiquetas(GrupoEtiqueta.METODO_ENTREGA, ["Entrega en el centro"]),
+            titulo="Suma a su Mesa",
+            descripcion_corta=("Recolección de alimentos y productos de limpieza para el Asilo de Ancianos "
+                               "Morada del Anciano Desvalido de Cadereyta. Se sirven 6,900 servicios de alimentación al mes."),
+            ubicacion="Monterrey, N.L.", ciudad=mty, organizacion=org["sanjose"],
+            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Alimentos"],
+            meta=Decimal("100"), recaudado=Decimal("25"), whatsapp="8114707350",
+            fecha_limite=datetime(2026, 10, 30),
+            condiciones_recepcion="Puntos de acopio: 1) Calle Cóndor 1001, Fracc. Azhara. 2) Río Amazonas 327, Del Valle, San Pedro. 3) Fuego 45, Col. Olinca.",
+            descripcion_larga=(
+                "Recolección de alimentos no perecederos y productos de limpieza para el Asilo con Adultos Mayores en Cadereyta.\n\n"
+                "Alimentos: aceite, arroz, frijoles, lentejas, azúcar, avena, atún, productos enlatados, leche, té, café, galletas, gelatina, pasta, saladitas, servilletas, papel de baño.\n\n"
+                "Productos de limpieza: escobas, trapeador, bolsas de basura, cloro, fabuloso, pinol, esponjas, jabón líquido, desengrasante."
+            ),
+            imagenes=imgs("https://base44.app/api/apps/69ed00f78e8b6884c29526e1/files/mp/public/69ed00f78e8b6884c29526e1/28159ef65_exec-ad334238-070b-4802-b0bc-d990edb3e521.png"),
+            opciones=[
+                DonacionOpcion(titulo="Alimentos no perecederos", monto=Decimal("0")),
+                DonacionOpcion(titulo="Productos de limpieza", monto=Decimal("0")),
             ],
+            etiquetas=[
+                *etiquetas(GrupoEtiqueta.ARTICULO, ["Alimentos", "Limpieza"]),
+                *etiquetas(GrupoEtiqueta.DESTINATARIO, ["Adultos Mayores"]),
+                *etiquetas(GrupoEtiqueta.CONDICION, ["Nuevo"]),
+            ],
+        ),
+
+        # 3. Tiempo / Voluntariado
+        Donacion(
+            titulo="Acompañamiento a Adultos Mayores",
+            descripcion_corta=("Asociación civil con 81 años de labor que brinda atención integral y permanente "
+                               "a 104 adultos mayores en situación vulnerable."),
+            ubicacion="Hidalgo Sur #637, Zona Centro, Saltillo / Monterrey", ciudad=mty, organizacion=org["fqs"],
+            modalidad=ModalidadDonacion.TIEMPO, categoria=c_don["Salud"],
+            meta=Decimal("30"), recaudado=Decimal("12"), whatsapp="8110809078",
+            fecha_limite=datetime(2026, 11, 30), horario="Sábados de 10:00 AM a 1:00 PM",
+            descripcion_larga=(
+                "Asociación civil con 81 años de labor que brinda atención integral y permanente a 104 adultos mayores "
+                "en situación vulnerable, muchos de ellos sin familia, pensión ni servicios de salud."
+            ),
+            imagenes=imgs("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTS7d1X_t0oN_Z0twQrE4mFovZHz-pUsdlBW--V7YXBQHuK-z7a5BYOokY&s=10"),
         ),
     ])
 
@@ -259,7 +260,7 @@ PASSWORD_DEMO = "demo12345"  # solo para la base local de desarrollo
 
 
 def _usuario_demo(db: Session, nombre: str, email: str, rol: RolUsuario = RolUsuario.USUARIO,
-                  password: str = PASSWORD_DEMO) -> Usuario:
+                 password: str = PASSWORD_DEMO) -> Usuario:
     """Regresa el usuario con ese correo; si no existe, lo crea."""
     existente = db.scalar(select(Usuario).where(Usuario.email == email))
     if existente:
@@ -431,7 +432,6 @@ def sembrar_comunidad(db: Session) -> None:
     likes(lectura, mariana, carlos, jorge)
     likes(asilo, sofia)
     likes(salud, carlos, jorge)
-    # Los avisos oficiales no llevan likes ni comentarios (el backend no los permite).
 
     # ---------- Comentarios (con sus likes) ----------
     def comentar(pub: Publicacion, autor: Usuario, texto: str, horas_despues: int,
@@ -452,7 +452,7 @@ def sembrar_comunidad(db: Session) -> None:
     comentar(asilo, mariana, "¿Qué es lo que más necesitan llevar?", 1)
     comentar(asilo, jorge, "Leche, ensure y artículos de limpieza. Viene todo en el Directorio.", 2, (mariana,))
     comentar(colecta, sofia, "En Quiero Donar hay una campaña que recibe juguetes, revísala.", 1, (carlos,))
-    comentar(colecta, jorge, "Comentario ocultado por moderación.", 2, visible=False)  # no debe verse
+    comentar(colecta, jorge, "Comentario ocultado por moderación.", 2, visible=False)
 
     db.commit()
     print(f"Comunidad cargada: {len(publicaciones)} publicaciones, usuarios demo con contraseña "
