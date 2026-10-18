@@ -23,6 +23,7 @@ class TipoNotificacion(str, enum.Enum):
     # Admin
     PUBLICACION_POR_REVISAR = "PUBLICACION_POR_REVISAR"
     ACTIVIDAD_LLENA = "ACTIVIDAD_LLENA"
+    INSCRIPCION_ACTIVIDAD = "INSCRIPCION_ACTIVIDAD"
 
 
 class DestinoNotificacion(str, enum.Enum):
@@ -33,6 +34,7 @@ class DestinoNotificacion(str, enum.Enum):
     INVITACIONES = "INVITACIONES"            # invitaciones recibidas
     ACTIVIDAD = "ACTIVIDAD"                  # detalle de actividad (destino_id)
     MODERACION = "MODERACION"                # admin: publicaciones pendientes
+
 
 
 class Notificacion(Base):

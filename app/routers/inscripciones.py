@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.notificaciones_servicio import notificar_admins, notificar_inscripcion
 
 from app.database import get_db
 from app.inscripciones_servicio import ESTADOS_ACTIVOS, ahora, bloquear_actividad, contar_ocupados, promover_lista_espera
@@ -194,6 +195,11 @@ async def inscribirse(
     )
     db.add(inscripcion)
     try:
+        await db.flush()  # si la familia ya estaba inscrita, falla aquí (antes de notificar)
+        # A quien inscribió y a cada adulto inscrito (los menores no tienen cuenta)
+        await notificar_inscripcion(
+            db, actividad, inscripcion.id, usuario, datos.usuario_ids, datos.total, en_espera,
+        )
         await db.commit()
     except IntegrityError:
         await db.rollback()
@@ -238,6 +244,7 @@ async def cambiar_participantes(
     # Diferencia en vez de reemplazar todo: se conservan las filas de quien sigue
     # (y su asistencia) y no se choca con los UNIQUE al reinsertar a la misma persona.
     nuevos_u, nuevos_m = set(datos.usuario_ids), set(datos.menor_ids)
+    adultos_antes = {p.usuario_id for p in inscripcion.participantes if p.usuario_id}
     inscripcion.participantes = [
         p for p in inscripcion.participantes
         if (p.usuario_id in nuevos_u) or (p.menor_id in nuevos_m)
@@ -246,8 +253,13 @@ async def cambiar_participantes(
     ya_m = {p.menor_id for p in inscripcion.participantes if p.menor_id}
     inscripcion.participantes += [InscripcionParticipante(usuario_id=u) for u in datos.usuario_ids if u not in ya_u]
     inscripcion.participantes += [InscripcionParticipante(menor_id=m) for m in datos.menor_ids if m not in ya_m]
-
-    await promover_lista_espera(db, actividad_id)  # si se redujo, quizá ya cabe alguien (o ella misma)
+    # Solo a los adultos que se agregaron ahora (a los que ya iban ya se les avisó)
+    agregados = [u for u in datos.usuario_ids if u not in adultos_antes]
+    if agregados:
+        await notificar_inscripcion(
+            db, actividad, inscripcion.id, usuario, agregados, datos.total,
+            en_espera=inscripcion.estado == EstadoInscripcion.EN_ESPERA, agregados=True,
+        )
     await db.commit()
     return await _con_posicion(db, await _recargar(db, inscripcion.id))
 

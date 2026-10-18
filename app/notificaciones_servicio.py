@@ -170,3 +170,55 @@ async def generar_recordatorios(db: AsyncSession, usuario: Usuario) -> None:
         )
     if actividades:
         await db.commit()
+
+
+async def notificar_inscripcion(
+    db: AsyncSession,
+    actividad: Actividad,
+    inscripcion_id: uuid.UUID,
+    quien: Usuario,
+    adultos: list[uuid.UUID],
+    total_personas: int,
+    en_espera: bool,
+    agregados: bool = False,
+) -> None:
+    """Aviso de inscripción a una actividad.
+
+    - Quien inscribió (persona A): confirmación de lo que hizo.
+    - Cada adulto que va (persona B): que alguien de su familia lo inscribió.
+    agregados=True: solo se avisa a los adultos nuevos (cuando se modifica la inscripción).
+    """
+    nombre = quien.nombre.split(" ")[0]
+    cuando = _cuando(actividad.inicia_en)
+    personas = f"{total_personas} persona{'s' if total_personas != 1 else ''}"
+    destino = (DestinoNotificacion.ACTIVIDAD, actividad.id)
+
+    if not agregados:
+        if en_espera:
+            titulo, cuerpo = (
+                "Tu familia está en lista de espera",
+                f"«{actividad.titulo}» no tiene lugares por ahora; tu familia quedó en lista de espera "
+                f"({personas}). Te avisaremos si se libera un lugar.",
+            )
+        else:
+            titulo, cuerpo = (
+                "Inscripción confirmada",
+                f"Inscribiste a tu familia en «{actividad.titulo}» ({personas}). Empieza {cuando}.",
+            )
+        await notificar(db, quien.id, TipoNotificacion.INSCRIPCION_ACTIVIDAD, titulo, cuerpo,
+                        *destino, clave=f"inscripcion:{inscripcion_id}:{quien.id}")
+
+    for uid in dict.fromkeys(adultos):  # sin repetidos, en orden
+        if uid == quien.id:
+            continue  # quien inscribió ya recibió su confirmación
+        verbo = "te agregó a" if agregados else "te inscribió en"
+        if en_espera:
+            titulo = "Te anotaron en una lista de espera"
+            cuerpo = (f"{nombre} {verbo} la lista de espera de «{actividad.titulo}». "
+                      f"Te avisaremos si se libera un lugar.")
+        else:
+            titulo = "Te inscribieron a una actividad"
+            cuerpo = f"{nombre} {verbo} «{actividad.titulo}». Empieza {cuando}."
+        await notificar(db, uid, TipoNotificacion.INSCRIPCION_ACTIVIDAD, titulo, cuerpo, *destino,
+                        # Al agregar sin clave: si lo quitan y lo vuelven a agregar, sí vuelve a avisar
+                        clave=None if agregados else f"inscripcion:{inscripcion_id}:{uid}")
