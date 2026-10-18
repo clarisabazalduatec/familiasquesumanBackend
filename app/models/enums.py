@@ -100,3 +100,8 @@ def enum_col(enum_cls: type[enum.Enum], nombre: str) -> Enum:
         validate_strings=True,
         length=30,
     )
+    
+class EstadoInscripcion(str, enum.Enum):
+    CONFIRMADA = "CONFIRMADA"
+    EN_ESPERA = "EN_ESPERA"
+    CANCELADA = "CANCELADA"

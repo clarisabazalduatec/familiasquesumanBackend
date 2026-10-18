@@ -19,6 +19,7 @@ class InscripcionGuardar(BaseModel):
 
     usuario_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
     menor_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+    lista_espera: bool = False
 
     @model_validator(mode="after")
     def _validar(self):
@@ -60,6 +61,7 @@ class InscripcionOut(_Salida):
     creado_en: datetime
     cancelada_en: datetime | None = None
     participantes: list[ParticipanteOut]
+    posicion_espera: int | None = None
 
 
 class MiInscripcionOut(InscripcionOut):

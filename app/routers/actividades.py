@@ -15,7 +15,7 @@ from app.routers._comun import (
 from app.schemas_catalogo import ActividadAdmin, ActividadDetalle, ActividadGuardar, ActividadResumen
 from app.security import requiere_admin
 
-from app.inscripciones_servicio import bloquear_actividad, contar_ocupados
+from app.inscripciones_servicio import bloquear_actividad, contar_ocupados, promover_lista_espera
 
 router = APIRouter(prefix="/actividades", tags=["actividades"])
 
@@ -152,6 +152,7 @@ async def editar_actividad(
     antes = _claves_de(actividad)
     await _aplicar(db, actividad, datos)
     despues = set(_claves_de(actividad))
+    await promover_lista_espera(db, actividad_id)   # el cupo pudo subir (hace flush adentro)
     await db.commit()
     await _borrar_objetos([c for c in antes if c not in despues])
     return await _recargar(db, actividad.id)

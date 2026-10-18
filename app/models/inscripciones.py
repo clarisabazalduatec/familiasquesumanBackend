@@ -56,6 +56,9 @@ class InscripcionActividad(Base):
         lazy="selectin",
         order_by="InscripcionParticipante.id",
     )
+    
+    en_espera_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    posicion_espera = None  # no se guarda; la llenan los endpoints antes de responder
 
     __table_args__ = (
         # Igual que uq_invitacion_pendiente: solo cuenta la CONFIRMADA, así una familia
@@ -73,6 +76,9 @@ class InscripcionActividad(Base):
             "actividad_id",
             postgresql_where=text("estado = 'CONFIRMADA'"),
         ),
+        Index("uq_inscripcion_activa", "actividad_id", "familia_id", unique=True, postgresql_where=text("estado IN ('CONFIRMADA', 'EN_ESPERA')")),
+        Index("ix_inscripciones_actividad_confirmadas", "actividad_id", postgresql_where=text("estado = 'CONFIRMADA'")),
+        Index("ix_inscripciones_actividad_espera", "actividad_id", "en_espera_desde", postgresql_where=text("estado = 'EN_ESPERA'")),
     )
 
 

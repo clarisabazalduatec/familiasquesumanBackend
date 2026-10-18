@@ -10,8 +10,13 @@ from app.models import (
     EstadoInscripcion,
     InscripcionActividad,
     InscripcionParticipante,
+    DestinoNotificacion,
+    TipoNotificacion, 
+    Usuario,
 )
+from app.notificaciones_servicio import notificar
 
+ESTADOS_ACTIVOS = (EstadoInscripcion.CONFIRMADA, EstadoInscripcion.EN_ESPERA)
 
 def ahora() -> datetime:
     return datetime.now(timezone.utc)
@@ -57,10 +62,10 @@ async def cancelar_inscripciones_vacias(db: AsyncSession, familia_id: uuid.UUID)
         update(InscripcionActividad)
         .where(
             InscripcionActividad.familia_id == familia_id,
-            InscripcionActividad.estado == EstadoInscripcion.CONFIRMADA,
+            InscripcionActividad.estado.in_(ESTADOS_ACTIVOS),
             InscripcionActividad.id.not_in(con_gente),
         )
-        .values(estado=EstadoInscripcion.CANCELADA, cancelada_en=ahora())
+        .values(estado=EstadoInscripcion.CANCELADA, cancelada_en=ahora(), en_espera_desde=None)
         .execution_options(synchronize_session=False)
     )
 
@@ -75,7 +80,7 @@ async def quitar_adulto_de_inscripciones_futuras(
         .join(Actividad, InscripcionActividad.actividad_id == Actividad.id)
         .where(
             InscripcionActividad.familia_id == familia_id,
-            InscripcionActividad.estado == EstadoInscripcion.CONFIRMADA,
+            InscripcionActividad.estado.in_(ESTADOS_ACTIVOS),
             Actividad.inicia_en > ahora(),
         )
     )
@@ -87,3 +92,80 @@ async def quitar_adulto_de_inscripciones_futuras(
         )
         .execution_options(synchronize_session=False)
     )
+    
+async def promover_lista_espera(db: AsyncSession, actividad_id: uuid.UUID) -> int:
+    """Sube familias de la espera a CONFIRMADA mientras quepan. Regresa cuántas subió.
+
+    PRECONDICIÓN: ya se tomó bloquear_actividad() en esta transacción.
+    No hace commit: la promoción y su notificación van en la misma transacción que el evento.
+    """
+    await db.flush()  # que lo pendiente (cupo nuevo, participantes) ya sea visible
+    actividad = await db.get(Actividad, actividad_id)
+    if actividad is None or not actividad.activa or actividad.inicia_en <= ahora():
+        return 0
+
+    libres = actividad.cupo_total - await contar_ocupados(db, actividad_id)
+    if libres <= 0:
+        return 0
+
+    fila = (
+        await db.execute(
+            select(InscripcionActividad)
+            .where(
+                InscripcionActividad.actividad_id == actividad_id,
+                InscripcionActividad.estado == EstadoInscripcion.EN_ESPERA,
+            )
+            .order_by(InscripcionActividad.en_espera_desde, InscripcionActividad.id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalars().all()
+
+    subidas = 0
+    for insc in fila:
+        n = len(insc.participantes)
+        if n == 0 or n > libres:
+            continue  # no cabe completa: conserva su lugar en la fila
+        insc.estado = EstadoInscripcion.CONFIRMADA
+        insc.en_espera_desde = None
+        libres -= n
+        subidas += 1
+
+        adultos = (await db.execute(
+            select(Usuario.id).where(Usuario.familia_id == insc.familia_id)
+        )).scalars().all()
+        for uid in adultos:
+            await notificar(
+                db, uid, TipoNotificacion.LUGAR_CONFIRMADO,
+                "¡Tu familia tiene lugar!",
+                f"Se liberó un lugar y tu familia quedó confirmada en «{actividad.titulo}».",
+                DestinoNotificacion.ACTIVIDAD, actividad_id, clave=f"lugar:{insc.id}:{uid}",
+            )
+        if libres <= 0:
+            break
+    return subidas
+
+
+async def actividades_futuras_confirmadas(db: AsyncSession, familia_id: uuid.UUID) -> list[uuid.UUID]:
+    """Para familias.py: actividades futuras donde la familia ocupa lugares (ordenadas, para
+    bloquear siempre en el mismo orden y evitar deadlocks)."""
+    stmt = (
+        select(InscripcionActividad.actividad_id)
+        .join(Actividad, InscripcionActividad.actividad_id == Actividad.id)
+        .where(
+            InscripcionActividad.familia_id == familia_id,
+            InscripcionActividad.estado == EstadoInscripcion.CONFIRMADA,
+            Actividad.inicia_en > ahora(),
+        )
+        .order_by(InscripcionActividad.actividad_id)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def bloquear_actividades(db: AsyncSession, ids: list[uuid.UUID]) -> None:
+    for aid in ids:
+        await bloquear_actividad(db, aid)
+
+
+async def promover_varias(db: AsyncSession, ids: list[uuid.UUID]) -> None:
+    for aid in ids:
+        await promover_lista_espera(db, aid)

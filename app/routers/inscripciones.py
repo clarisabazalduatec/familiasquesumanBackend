@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.inscripciones_servicio import ahora, bloquear_actividad, contar_ocupados
+from app.inscripciones_servicio import ESTADOS_ACTIVOS, ahora, bloquear_actividad, contar_ocupados, promover_lista_espera
 from app.models import (
     Actividad,
     EstadoInscripcion,
@@ -33,6 +33,7 @@ from app.schemas_inscripciones import (
     InscripcionOut,
     MiInscripcionOut,
 )
+
 from app.notificaciones_servicio import notificar_admins
 from app.security import obtener_usuario_actual, requiere_admin
 
@@ -40,6 +41,30 @@ router = APIRouter(tags=["inscripciones"])
 
 
 # ---------- helpers ----------
+# El helper pasa a incluir la espera
+async def _inscripcion_activa(db, actividad_id, familia_id):
+    return await db.scalar(
+        select(InscripcionActividad).where(
+            InscripcionActividad.actividad_id == actividad_id,
+            InscripcionActividad.familia_id == familia_id,
+            InscripcionActividad.estado.in_(ESTADOS_ACTIVOS),
+        )
+    )
+
+
+async def _con_posicion(db, insc: InscripcionActividad) -> InscripcionActividad:
+    insc.posicion_espera = None
+    if insc.estado == EstadoInscripcion.EN_ESPERA:
+        antes = await db.scalar(
+            select(func.count()).select_from(InscripcionActividad).where(
+                InscripcionActividad.actividad_id == insc.actividad_id,
+                InscripcionActividad.estado == EstadoInscripcion.EN_ESPERA,
+                InscripcionActividad.en_espera_desde < insc.en_espera_desde,
+            )
+        )
+        insc.posicion_espera = (antes or 0) + 1
+    return insc
+
 def _familia_de(usuario: Usuario) -> uuid.UUID:
     if usuario.familia_id is None:
         raise HTTPException(
@@ -60,7 +85,7 @@ async def _actividad_inscribible(db: AsyncSession, actividad_id: uuid.UUID) -> A
     return actividad
 
 
-async def _inscripcion_confirmada(
+async def _inscripcion_activa(
     db: AsyncSession, actividad_id: uuid.UUID, familia_id: uuid.UUID
 ) -> InscripcionActividad | None:
     return await db.scalar(
@@ -140,21 +165,30 @@ async def inscribirse(
     db: AsyncSession = Depends(get_db),
 ):
     familia_id = _familia_de(usuario)
-    actividad = await _actividad_inscribible(db, actividad_id)  # <- toma el candado
+    actividad = await _actividad_inscribible(db, actividad_id)  # candado
 
-    if await _inscripcion_confirmada(db, actividad_id, familia_id) is not None:
-        raise HTTPException(
-            status_code=409, detail="Tu familia ya está inscrita; puedes modificar quiénes asisten"
-        )
+    if datos.total > actividad.cupo_total:
+        raise HTTPException(status_code=422,
+            detail=f"La actividad solo tiene {actividad.cupo_total} lugares; seleccionaste {datos.total}")
+    if await _inscripcion_activa(db, actividad_id, familia_id) is not None:
+        raise HTTPException(status_code=409,
+            detail="Tu familia ya está inscrita o en lista de espera; puedes modificar quiénes asisten")
     await _validar_personas(db, familia_id, datos)
+
     ocupados = await contar_ocupados(db, actividad_id)
-    _verificar_cupo(actividad, ocupados, datos.total)
-    await _avisar_si_se_lleno(db, actividad, ocupados + datos.total)
+    libres = max(actividad.cupo_total - ocupados, 0)
+    en_espera = False
+    if datos.total <= libres:
+        await _avisar_si_se_lleno(db, actividad, ocupados + datos.total)
+    elif datos.lista_espera:
+        en_espera = True
+    else:
+        _verificar_cupo(actividad, ocupados, datos.total)  # lanza el 409 de siempre
 
     inscripcion = InscripcionActividad(
-        actividad_id=actividad_id,
-        familia_id=familia_id,
-        inscrito_por_id=usuario.id,
+        actividad_id=actividad_id, familia_id=familia_id, inscrito_por_id=usuario.id,
+        estado=EstadoInscripcion.EN_ESPERA if en_espera else EstadoInscripcion.CONFIRMADA,
+        en_espera_desde=ahora() if en_espera else None,
         participantes=[InscripcionParticipante(usuario_id=u) for u in datos.usuario_ids]
         + [InscripcionParticipante(menor_id=m) for m in datos.menor_ids],
     )
@@ -162,11 +196,9 @@ async def inscribirse(
     try:
         await db.commit()
     except IntegrityError:
-        # Respaldo: dos adultos de la misma familia inscribiéndose al mismo tiempo
         await db.rollback()
         raise HTTPException(status_code=409, detail="Tu familia ya está inscrita en esta actividad")
-    return await _recargar(db, inscripcion.id)
-
+    return await _con_posicion(db, await _recargar(db, inscripcion.id))
 
 @router.get("/actividades/{actividad_id}/inscripcion", response_model=InscripcionOut)
 async def mi_inscripcion(
@@ -176,7 +208,7 @@ async def mi_inscripcion(
 ):
     inscripcion = None
     if usuario.familia_id is not None:
-        inscripcion = await _inscripcion_confirmada(db, actividad_id, usuario.familia_id)
+        inscripcion = await _inscripcion_activa(db, actividad_id, usuario.familia_id)
     if inscripcion is None:
         raise HTTPException(status_code=404, detail="Tu familia no está inscrita en esta actividad")
     return inscripcion
@@ -191,15 +223,17 @@ async def cambiar_participantes(
 ):
     familia_id = _familia_de(usuario)
     actividad = await _actividad_inscribible(db, actividad_id)
-
-    inscripcion = await _inscripcion_confirmada(db, actividad_id, familia_id)
+    inscripcion = await _inscripcion_activa(db, actividad_id, familia_id)
     if inscripcion is None:
         raise HTTPException(status_code=404, detail="Tu familia no está inscrita en esta actividad")
+    if datos.total > actividad.cupo_total:
+        raise HTTPException(status_code=422, detail="Seleccionaste más personas que el cupo total")
     await _validar_personas(db, familia_id, datos)
-    # Lo que ocupan las DEMÁS familias + lo que pide esta ahora
-    ocupados_otras = await contar_ocupados(db, actividad_id, inscripcion.id)
-    _verificar_cupo(actividad, ocupados_otras, datos.total)
-    await _avisar_si_se_lleno(db, actividad, ocupados_otras + datos.total)
+
+    if inscripcion.estado == EstadoInscripcion.CONFIRMADA:
+        ocupados_otras = await contar_ocupados(db, actividad_id, inscripcion.id)
+        _verificar_cupo(actividad, ocupados_otras, datos.total)
+        await _avisar_si_se_lleno(db, actividad, ocupados_otras + datos.total)
 
     # Diferencia en vez de reemplazar todo: se conservan las filas de quien sigue
     # (y su asistencia) y no se choca con los UNIQUE al reinsertar a la misma persona.
@@ -213,8 +247,9 @@ async def cambiar_participantes(
     inscripcion.participantes += [InscripcionParticipante(usuario_id=u) for u in datos.usuario_ids if u not in ya_u]
     inscripcion.participantes += [InscripcionParticipante(menor_id=m) for m in datos.menor_ids if m not in ya_m]
 
+    await promover_lista_espera(db, actividad_id)  # si se redujo, quizá ya cabe alguien (o ella misma)
     await db.commit()
-    return await _recargar(db, inscripcion.id)
+    return await _con_posicion(db, await _recargar(db, inscripcion.id))
 
 
 @router.delete("/actividades/{actividad_id}/inscripcion", status_code=status.HTTP_204_NO_CONTENT)
@@ -224,15 +259,18 @@ async def cancelar_inscripcion(
     db: AsyncSession = Depends(get_db),
 ):
     familia_id = _familia_de(usuario)
-    inscripcion = await _inscripcion_confirmada(db, actividad_id, familia_id)
+    if not await bloquear_actividad(db, actividad_id):
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    inscripcion = await _inscripcion_activa(db, actividad_id, familia_id)
     if inscripcion is None:
         raise HTTPException(status_code=404, detail="Tu familia no está inscrita en esta actividad")
     if inscripcion.actividad.inicia_en <= ahora():
         raise HTTPException(status_code=409, detail="La actividad ya comenzó; ya no se puede cancelar")
 
-    # No se borra: queda como historial. Al dejar de estar CONFIRMADA ya no ocupa lugares.
     inscripcion.estado = EstadoInscripcion.CANCELADA
     inscripcion.cancelada_en = ahora()
+    inscripcion.en_espera_desde = None
+    await promover_lista_espera(db, actividad_id)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -251,11 +289,12 @@ async def inscripciones_de_mi_familia(
         .join(Actividad, InscripcionActividad.actividad_id == Actividad.id)
         .where(
             InscripcionActividad.familia_id == usuario.familia_id,
-            InscripcionActividad.estado == EstadoInscripcion.CONFIRMADA,
+            InscripcionActividad.estado.in_(ESTADOS_ACTIVOS),
         )
         .order_by(Actividad.inicia_en)
     )
-    return (await db.execute(stmt)).scalars().all()
+    filas = (await db.execute(stmt)).scalars().all()
+    return [await _con_posicion(db, f) for f in filas]
 
 
 # =====================================================================
@@ -322,13 +361,32 @@ async def cancelar_inscripcion_admin(
     db: AsyncSession = Depends(get_db),
 ):
     inscripcion = await db.get(InscripcionActividad, inscripcion_id)
-    if (
-        inscripcion is None
-        or inscripcion.actividad_id != actividad_id
-        or inscripcion.estado != EstadoInscripcion.CONFIRMADA
-    ):
+    if not await bloquear_actividad(db, actividad_id):
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    inscripcion = await db.get(InscripcionActividad, inscripcion_id)
+    if (inscripcion is None or inscripcion.actividad_id != actividad_id
+            or inscripcion.estado not in ESTADOS_ACTIVOS):
         raise HTTPException(status_code=404, detail="Inscripción no encontrada")
     inscripcion.estado = EstadoInscripcion.CANCELADA
     inscripcion.cancelada_en = ahora()
+    inscripcion.en_espera_desde = None
+    await promover_lista_espera(db, actividad_id)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@router.get("/actividades/{actividad_id}/inscripciones", response_model=list[InscripcionAdminOut])
+async def inscripciones_de_actividad(
+    actividad_id: uuid.UUID,
+    estado: EstadoInscripcion = EstadoInscripcion.CONFIRMADA,
+    _admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if await db.get(Actividad, actividad_id) is None:
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    orden = (InscripcionActividad.en_espera_desde, InscripcionActividad.id) \
+        if estado == EstadoInscripcion.EN_ESPERA else (InscripcionActividad.creado_en,)
+    stmt = (select(InscripcionActividad)
+            .where(InscripcionActividad.actividad_id == actividad_id, InscripcionActividad.estado == estado)
+            .order_by(*orden))
+    filas = (await db.execute(stmt)).scalars().all()
+    return [await _con_posicion(db, f) for f in filas]
