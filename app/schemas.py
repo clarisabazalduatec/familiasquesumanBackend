@@ -26,6 +26,12 @@ class UsuarioRespuesta(BaseModel):
     email: EmailStr
     ubicacion: str | None = None
     rol: RolUsuario = RolUsuario.USUARIO
+    foto_url: str | None = None
+
+    @field_validator("foto_url")
+    @classmethod
+    def _foto_publica(cls, v):
+        return url_publica(v)
 
 
 class TokenRespuesta(BaseModel):
