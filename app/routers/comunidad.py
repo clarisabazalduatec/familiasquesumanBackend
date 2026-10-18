@@ -1,15 +1,17 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.enums import AmbitoCategoria
 
 import uuid
 from datetime import datetime, timezone
 from app.security import requiere_admin
-
+from app.routers.imagenes import guardar_imagen_subida, ImagenSubida
 from app import almacen
 from app.database import get_db
 from app.models import (
+    AmbitoCategoria,
     Categoria,
     EstadoPublicacion,
     Publicacion,
@@ -35,6 +37,24 @@ from app.security import (
 
 router = APIRouter(prefix="/comunidad", tags=["comunidad"])
 
+## subir imagenes para comunidad (sin ser admin)
+@router.post(
+    "/imagenes",
+    response_model=ImagenSubida,
+    status_code=status.HTTP_201_CREATED
+)
+async def subir_imagen_comunidad(
+    archivo: UploadFile,
+    usuario: Usuario = Depends(obtener_usuario_actual)
+):
+    
+
+    clave = await guardar_imagen_subida(archivo)
+
+    return ImagenSubida(
+        clave=clave,
+        url=f"/imagenes/{clave}"
+    )
 
 async def _validar_imagenes(urls: list[str]) -> list[str]:
     """Valida imágenes con el almacén existente del proyecto."""
@@ -56,7 +76,6 @@ async def _validar_imagenes(urls: list[str]) -> list[str]:
     return claves
 
 
-## publicaciones de comunidad
 
 ## publicaciones de comunidad
 @router.get("", response_model=list[PublicacionResumen])
@@ -107,18 +126,13 @@ async def crear_publicacion(
     usuario: Usuario = Depends(obtener_usuario_actual),
     db: AsyncSession = Depends(get_db),
 ):
-    if usuario.rol == RolUsuario.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Los administradores publican desde Avisos Oficiales"
-        )
+    
     if datos.categoria_id is not None:
         categoria = await db.get(Categoria, datos.categoria_id)
-        if categoria is None:
-            raise HTTPException(
-                status_code=400,
-                detail="La categoría no existe"
-            )
+    if categoria is None:
+        raise HTTPException(status_code=400,detail="La categoría no existe")
+    if categoria.ambito != AmbitoCategoria.PUBLICACION:
+        raise HTTPException(  status_code=400, detail="La categoría debe pertenecer al ámbito PUBLICACION" )
 
     claves = await _validar_imagenes(datos.imagenes)
     publicacion = Publicacion(
@@ -280,6 +294,50 @@ async def rechazar_publicacion(
 
     return (await db.execute(stmt)).scalar_one()
 
+# Admin: historial de publicaciones aprobadas
+@router.get("/aprobadas", response_model=list[PublicacionDetalle])
+async def listar_publicaciones_aprobadas(
+    admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(Publicacion)
+        .where(
+            Publicacion.tipo == TipoPublicacion.COMUNIDAD,
+            Publicacion.estado == EstadoPublicacion.APROBADA,
+            Publicacion.revisado_en.is_not(None),
+        )
+        .order_by(
+            Publicacion.revisado_en.desc(),
+            Publicacion.id.desc(),
+        )
+        .limit(10)
+    )
+
+    return (await db.execute(stmt)).scalars().all()
+
+
+# Admin: historial de publicaciones rechazadas
+@router.get("/rechazadas", response_model=list[PublicacionDetalle])
+async def listar_publicaciones_rechazadas(
+    admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(Publicacion)
+        .where(
+            Publicacion.tipo == TipoPublicacion.COMUNIDAD,
+            Publicacion.estado == EstadoPublicacion.RECHAZADA,
+            Publicacion.revisado_en.is_not(None),
+        )
+        .order_by(
+            Publicacion.revisado_en.desc(),
+            Publicacion.id.desc(),
+        )
+        .limit(10)
+    )
+
+    return (await db.execute(stmt)).scalars().all()
 
 # admin: crear Avisos Oficiales
 @router.post(
@@ -614,12 +672,11 @@ async def detalle_publicacion(
 
     if (
         publicacion is None
-        or publicacion.tipo != TipoPublicacion.COMUNIDAD
         or publicacion.estado != EstadoPublicacion.APROBADA
     ):
         raise HTTPException(
             status_code=404,
-            detail="Publicación de Comunidad no encontrada"
+            detail="Publicación no encontrada"
         )
 
     # Contar likes
