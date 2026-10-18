@@ -61,21 +61,8 @@ class InscripcionActividad(Base):
     posicion_espera = None  # no se guarda; la llenan los endpoints antes de responder
 
     __table_args__ = (
-        # Igual que uq_invitacion_pendiente: solo cuenta la CONFIRMADA, así una familia
-        # que canceló puede volver a inscribirse.
-        Index(
-            "uq_inscripcion_confirmada",
-            "actividad_id",
-            "familia_id",
-            unique=True,
-            postgresql_where=text("estado = 'CONFIRMADA'"),
-        ),
-        # Para contar lugares por actividad rápido (solo filas que cuentan)
-        Index(
-            "ix_inscripciones_actividad_confirmadas",
-            "actividad_id",
-            postgresql_where=text("estado = 'CONFIRMADA'"),
-        ),
+        # Una sola inscripción activa (confirmada o en espera) por familia y actividad;
+        # si canceló, puede volver a inscribirse. (Lo crea la migración de lista de espera.)
         Index("uq_inscripcion_activa", "actividad_id", "familia_id", unique=True, postgresql_where=text("estado IN ('CONFIRMADA', 'EN_ESPERA')")),
         Index("ix_inscripciones_actividad_confirmadas", "actividad_id", postgresql_where=text("estado = 'CONFIRMADA'")),
         Index("ix_inscripciones_actividad_espera", "actividad_id", "en_espera_desde", postgresql_where=text("estado = 'EN_ESPERA'")),
