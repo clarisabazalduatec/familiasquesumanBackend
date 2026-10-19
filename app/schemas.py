@@ -1,7 +1,8 @@
+from datetime import datetime
 import uuid
 
 from app.models.enums import RolUsuario
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.almacen import url_publica
@@ -61,3 +62,18 @@ class ChatEnlace(BaseModel):
 class ChatMensajeRespuesta(BaseModel):
     respuesta: str
     enlaces: list[ChatEnlace] = []
+
+
+class EncuestaActividadCreate(BaseModel):
+    experiencia_general: int
+    utilidad_valor: int
+    facilidad_participacion: int
+    comentarios: Optional[str] = None
+
+class EncuestaActividadOut(EncuestaActividadCreate):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    usuario_id: uuid.UUID
+    actividad_id: uuid.UUID
+    creado_en: datetime
