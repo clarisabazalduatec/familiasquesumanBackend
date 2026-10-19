@@ -25,6 +25,7 @@ from app.models import (
     Usuario,
     DestinoNotificacion,
     TipoNotificacion,
+    EncuestaActividad,
 )
 from app.schemas_inscripciones import (
     AsistenciaGuardar,
@@ -288,6 +289,7 @@ async def inscripciones_de_mi_familia(
     Sin familia regresa [] en vez de error: la pantalla simplemente sale vacía."""
     if usuario.familia_id is None:
         return []
+
     stmt = (
         select(InscripcionActividad)
         .join(Actividad, InscripcionActividad.actividad_id == Actividad.id)
@@ -298,7 +300,23 @@ async def inscripciones_de_mi_familia(
         .order_by(Actividad.inicia_en)
     )
     filas = (await db.execute(stmt)).scalars().all()
-    return [await _con_posicion(db, f) for f in filas]
+
+    # 1. Consultar los IDs de las actividades cuya encuesta final YA respondió el usuario
+    stmt_enc = select(EncuestaActividad.actividad_id).where(
+        EncuestaActividad.usuario_id == usuario.id
+    )
+    res_enc = await db.execute(stmt_enc)
+    actividades_respondidas = set(res_enc.scalars().all())
+
+    # 2. Mapear cada inscripción calculando encuesta_respondida = True/False
+    resultado = []
+    for f in filas:
+        insc = await _con_posicion(db, f)
+        dto = MiInscripcionOut.model_validate(insc)
+        dto.encuesta_respondida = (insc.actividad_id in actividades_respondidas)
+        resultado.append(dto)
+
+    return resultado
 
 
 # =====================================================================

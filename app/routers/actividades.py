@@ -3,6 +3,8 @@ import csv
 import io
 from datetime import datetime, timezone
 
+from app.models.iniciativas import EncuestaInicialActividad
+from app.schemas_inscripciones import EncuestaInicialCreate, EncuestaInicialOut
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -197,11 +199,62 @@ async def detalle_actividad(actividad_id: uuid.UUID, db: AsyncSession = Depends(
     return await obtener_o_404(db, Actividad, actividad_id, "Actividad")
 
 
-@router.post("/{actividad_id}/encuesta", response_model=EncuestaActividadOut, status_code=status.HTTP_201_CREATED)
+# Encuesta inicial (pre-actividad): para que los participantes digan por qué se inscribieron y qué esperan lograr.
+@router.post("/{actividad_id}/encuesta-inicial", response_model=EncuestaInicialOut)
+async def enviar_encuesta_inicial(
+    actividad_id: uuid.UUID,
+    encuesta: EncuestaInicialCreate,
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        from app.database import Base, engine
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        act_id_col = Actividad.id if hasattr(Actividad, "id") else getattr(Actividad, "iniciativa_id")
+        stmt_act = select(Actividad).where(act_id_col == actividad_id)
+        actividad = await db.scalar(stmt_act)
+        if not actividad:
+            raise HTTPException(status_code=404, detail="Actividad no encontrada")
+
+        stmt_e = select(EncuestaInicialActividad).where(
+            EncuestaInicialActividad.actividad_id == actividad_id,
+            EncuestaInicialActividad.usuario_id == usuario_actual.id
+        )
+        existe = await db.scalar(stmt_e)
+        
+        # Si ya la respondió, devolvemos la encuesta existente
+        if existe:
+            return existe
+
+        nueva_encuesta = EncuestaInicialActividad(
+            usuario_id=usuario_actual.id,
+            actividad_id=actividad_id,
+            motivos=encuesta.motivos,
+            otro_motivo=encuesta.otro_motivo,
+            expectativas=encuesta.expectativas,
+            otra_expectativa=encuesta.otra_expectativa
+        )
+        db.add(nueva_encuesta)
+        await db.commit()
+        await db.refresh(nueva_encuesta)
+
+        return nueva_encuesta
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al guardar encuesta inicial: {str(e)}")
+
+
+# Encuesta de actividad (post-actividad): para que los participantes den su opinión sobre la experiencia.
+@router.post("/{actividad_id}/encuesta", response_model=EncuestaActividadOut)
 async def enviar_encuesta(
     actividad_id: uuid.UUID,
     encuesta: EncuestaActividadCreate,
-    usuario_actual: Usuario = Depends(obtener_usuario_actual), # Usa la dependencia correcta de tu proyecto
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
     db: AsyncSession = Depends(get_db)
 ):
     # 1. Validar que la actividad exista
@@ -209,17 +262,18 @@ async def enviar_encuesta(
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
 
-    # 2. Validar que no haya contestado ya
+    # 2. Verificar si ya contestó previamente
     stmt = select(EncuestaActividad).where(
         EncuestaActividad.actividad_id == actividad_id,
         EncuestaActividad.usuario_id == usuario_actual.id
     )
     existe = await db.scalar(stmt)
     
+    # Si ya la respondió anteriormente, retornamos el registro guardado sin tirar error 400
     if existe:
-        raise HTTPException(status_code=400, detail="Ya respondiste la encuesta para esta actividad")
+        return existe
 
-    # 3. Guardar en base de datos
+    # 3. Guardar en base de datos si es nueva
     nueva_encuesta = EncuestaActividad(
         usuario_id=usuario_actual.id,
         actividad_id=actividad_id,
@@ -233,6 +287,34 @@ async def enviar_encuesta(
     await db.refresh(nueva_encuesta)
     
     return nueva_encuesta
+
+
+@router.get("/{actividad_id}/encuestas/estado")
+async def estado_encuestas_usuario(
+    actividad_id: uuid.UUID,
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retorna si el usuario ya respondió la encuesta inicial y/o la encuesta final."""
+    
+    # 1. Verificar si ya respondió la encuesta inicial
+    stmt_inicial = select(EncuestaInicialActividad).where(
+        EncuestaInicialActividad.actividad_id == actividad_id,
+        EncuestaInicialActividad.usuario_id == usuario_actual.id
+    )
+    respondio_inicial = await db.scalar(stmt_inicial) is not None
+
+    # 2. Verificar si ya respondió la encuesta final
+    stmt_final = select(EncuestaActividad).where(
+        EncuestaActividad.actividad_id == actividad_id,
+        EncuestaActividad.usuario_id == usuario_actual.id
+    )
+    respondio_final = await db.scalar(stmt_final) is not None
+
+    return {
+        "encuesta_inicial_respondida": respondio_inicial,
+        "encuesta_final_respondida": respondio_final
+    }
 
 
 @router.get("/encuestas/exportar")
