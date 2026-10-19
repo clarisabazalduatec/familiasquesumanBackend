@@ -4,15 +4,18 @@ from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
+    Column,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     func,
     true,
+    JSON
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -217,6 +220,24 @@ class IniciativaImagen(Base):
     url: Mapped[str] = mapped_column(String(500))
     orden: Mapped[int] = mapped_column(default=0, server_default="0")
     iniciativa: Mapped[Iniciativa] = relationship(back_populates="imagenes")
+
+
+# --- Encuestas de actividades: inicial y final (post-actividad) ----
+class EncuestaInicialActividad(Base):
+    __tablename__ = "encuestas_iniciales_actividad"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
+    # Si la tabla en tu BD se llama 'actividades', usa "actividades.id", o "actividades.iniciativa_id" si esa es la columna
+    actividad_id = Column(UUID(as_uuid=True), nullable=False)
+
+    motivos = Column(JSON, nullable=False)
+    otro_motivo = Column(String, nullable=True)
+
+    expectativas = Column(JSON, nullable=False)
+    otra_expectativa = Column(String, nullable=True)
+
+    creado_en = Column(DateTime, default=datetime.utcnow)
 
 
 class EncuestaActividad(Base):

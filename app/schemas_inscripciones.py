@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -67,6 +67,7 @@ class InscripcionOut(_Salida):
 class MiInscripcionOut(InscripcionOut):
     """Para "Mis actividades": la inscripción con los datos de la actividad."""
     actividad: ActividadResumen
+    encuesta_respondida: bool = False
 
 
 class FamiliaBreve(_Salida):
@@ -89,3 +90,24 @@ class InsigniaOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+# --------- Encuesta inicial (pre-actividad) ----------
+class EncuestaInicialCreate(BaseModel):
+    motivos: List[str] = Field(default_factory=list)
+    otro_motivo: Optional[str] = None
+    expectativas: List[str] = Field(default_factory=list)
+    otra_expectativa: Optional[str] = None
+
+class EncuestaInicialOut(BaseModel):
+    id: uuid.UUID
+    usuario_id: uuid.UUID
+    actividad_id: uuid.UUID
+    motivos: List[str]
+    otro_motivo: Optional[str] = None
+    expectativas: List[str]
+    otra_expectativa: Optional[str] = None
+    creado_en: datetime
+
+    model_config = ConfigDict(from_attributes=True)
