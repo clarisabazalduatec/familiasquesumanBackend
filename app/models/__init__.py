@@ -19,6 +19,7 @@ from app.models.iniciativas import (
     Donacion,
     DonacionEtiqueta,
     DonacionOpcion,
+    EncuestaActividad,
     Iniciativa,
     IniciativaImagen,
     Proyecto,
@@ -43,7 +44,7 @@ from app.models.inscripciones import InscripcionActividad, InscripcionParticipan
 
 __all__ = [
     "Actividad", "AmbitoCategoria", "Categoria", "CentroNecesidad", "CentroVisiteo",
-    "Ciudad", "Donacion", "DonacionEtiqueta", "DonacionOpcion", "EstadoInvitacion",
+    "Ciudad", "Donacion", "DonacionEtiqueta", "DonacionOpcion", "EncuestaActividad", "EstadoInvitacion",
     "EstadoProyecto", "Familia", "FamiliaMenor", "GrupoEtiqueta", "Iniciativa",
     "IniciativaImagen", "InvitacionFamilia", "MensajeChat", "ModalidadDonacion",
     "Organizacion", "Parentesco", "Proyecto", "ProyectoOpcionApoyo", "RolUsuario",

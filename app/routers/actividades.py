@@ -1,4 +1,6 @@
 import uuid
+import csv
+import io
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -7,15 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import (
-    Actividad, AmbitoCategoria, Categoria, IniciativaImagen, Organizacion, TipoIniciativa, Usuario, EstadoInscripcion, InscripcionActividad
+    Actividad, AmbitoCategoria, Categoria, IniciativaImagen, Organizacion, TipoIniciativa, Usuario, EstadoInscripcion, InscripcionActividad, EncuestaActividad
 )
 from app.routers._comun import (
     Paginacion, _borrar_objetos, _ciudad_id, _claves_validas, obtener_o_404,
 )
 from app.schemas_catalogo import ActividadAdmin, ActividadDetalle, ActividadGuardar, ActividadResumen
-from app.security import requiere_admin
+from app.security import requiere_admin, obtener_usuario_actual
 
 from app.inscripciones_servicio import bloquear_actividad, contar_ocupados, promover_lista_espera
+
+from app.schemas import EncuestaActividadCreate, EncuestaActividadOut
 
 router = APIRouter(prefix="/actividades", tags=["actividades"])
 
@@ -191,3 +195,88 @@ async def borrar_actividad(
 @router.get("/{actividad_id}", response_model=ActividadDetalle)
 async def detalle_actividad(actividad_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return await obtener_o_404(db, Actividad, actividad_id, "Actividad")
+
+
+@router.post("/{actividad_id}/encuesta", response_model=EncuestaActividadOut, status_code=status.HTTP_201_CREATED)
+async def enviar_encuesta(
+    actividad_id: uuid.UUID,
+    encuesta: EncuestaActividadCreate,
+    usuario_actual: Usuario = Depends(obtener_usuario_actual), # Usa la dependencia correcta de tu proyecto
+    db: AsyncSession = Depends(get_db)
+):
+    # 1. Validar que la actividad exista
+    actividad = await db.get(Actividad, actividad_id)
+    if not actividad:
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+
+    # 2. Validar que no haya contestado ya
+    stmt = select(EncuestaActividad).where(
+        EncuestaActividad.actividad_id == actividad_id,
+        EncuestaActividad.usuario_id == usuario_actual.id
+    )
+    existe = await db.scalar(stmt)
+    
+    if existe:
+        raise HTTPException(status_code=400, detail="Ya respondiste la encuesta para esta actividad")
+
+    # 3. Guardar en base de datos
+    nueva_encuesta = EncuestaActividad(
+        usuario_id=usuario_actual.id,
+        actividad_id=actividad_id,
+        experiencia_general=encuesta.experiencia_general,
+        utilidad_valor=encuesta.utilidad_valor,
+        facilidad_participacion=encuesta.facilidad_participacion,
+        comentarios=encuesta.comentarios
+    )
+    db.add(nueva_encuesta)
+    await db.commit()
+    await db.refresh(nueva_encuesta)
+    
+    return nueva_encuesta
+
+
+@router.get("/encuestas/exportar")
+async def exportar_todas_encuestas_csv(
+    _admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Genera y descarga un archivo CSV con TODAS las encuestas registradas."""
+    
+    stmt = (
+        select(EncuestaActividad, Usuario.nombre, Actividad.titulo)
+        .join(Usuario, EncuestaActividad.usuario_id == Usuario.id)
+        .join(Actividad, EncuestaActividad.actividad_id == Actividad.id)
+        .order_by(EncuestaActividad.creado_en.desc())
+    )
+    resultados = await db.execute(stmt)
+    encuestas = resultados.all()
+    
+    if not encuestas:
+        raise HTTPException(status_code=404, detail="No hay encuestas registradas en el sistema")
+
+    output = io.StringIO()
+    output.write('\ufeff')
+    writer = csv.writer(output)
+    
+    writer.writerow([
+        "ID Encuesta", "Actividad", "Nombre del Participante", 
+        "Experiencia General (1-5)", "Utilidad y Valor (1-5)", 
+        "Facilidad (1-5)", "Comentarios", "Fecha"
+    ])
+    
+    for enc, nombre_usuario, titulo_actividad in encuestas:
+        writer.writerow([
+            enc.id,
+            titulo_actividad,
+            nombre_usuario,
+            enc.experiencia_general, 
+            enc.utilidad_valor, 
+            enc.facilidad_participacion, 
+            enc.comentarios if enc.comentarios else "Sin comentarios", 
+            enc.creado_en.strftime("%Y-%m-%d %H:%M:%S") if enc.creado_en else ""
+        ])
+    
+    response = Response(content=output.getvalue(), media_type="text/csv")
+    response.charset = "utf-8"
+    response.headers["Content-Disposition"] = "attachment; filename=reporte_general_encuestas.csv"
+    return response

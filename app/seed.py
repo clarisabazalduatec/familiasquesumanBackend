@@ -16,10 +16,11 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (
     Actividad, AmbitoCategoria, Categoria, CentroNecesidad, CentroVisiteo, Ciudad,
-    Comentario, ComentarioLike, Donacion, DonacionEtiqueta, DonacionOpcion, EstadoProyecto,
-    EstadoPublicacion, GrupoEtiqueta, IniciativaImagen, ModalidadDonacion, Organizacion,
-    Proyecto, ProyectoOpcionApoyo, Publicacion, PublicacionImagen, PublicacionLike, RolUsuario,
-    TipoApoyo, TipoCentro, TipoPublicacion, Usuario,
+    Comentario, ComentarioLike, Donacion, DonacionEtiqueta, DonacionOpcion, EstadoAsistencia,
+    EstadoInscripcion, EstadoProyecto, EstadoPublicacion, Familia, GrupoEtiqueta,
+    IniciativaImagen, InscripcionActividad, InscripcionParticipante, ModalidadDonacion,
+    Organizacion, Proyecto, ProyectoOpcionApoyo, Publicacion, PublicacionImagen,
+    PublicacionLike, RolUsuario, TipoApoyo, TipoCentro, TipoPublicacion, Usuario,
 )
 from app.security import hashear_password
 
@@ -67,8 +68,28 @@ def sembrar(db: Session) -> None:
     }
     db.add_all(org.values())
 
-    # ---------- Actividades ----------
+    # ---------- Actividades Próximas y Concluidas ----------
+    act_utiles = Actividad(
+        titulo="Campaña de Donación de Útiles",
+        descripcion_corta="Entrega de paquetes escolares a niños de la comunidad.",
+        ubicacion="García, N.L.", ciudad=mty, organizacion=org["fqs"],
+        categoria=c_act["Educación"], inicia_en=dt(10, 10, 9), termina_en=dt(10, 10, 13),
+        cupo_total=40,
+        acerca_de="Jornada de entrega de útiles y convivencia con las familias inscritas en el programa.",
+    )
+
+    act_limpieza = Actividad(
+        titulo="Jornada Comunitaria de Limpieza",
+        descripcion_corta="Limpieza y acondicionamiento del parque comunitario.",
+        ubicacion="Escobedo, N.L.", ciudad=mty, organizacion=org["verde"],
+        categoria=c_act["Medio Ambiente"], inicia_en=dt(10, 12, 10), termina_en=dt(10, 12, 14),
+        cupo_total=30,
+        acerca_de="Recolección de residuos y pintura de bancas en el parque público.",
+    )
+
     db.add_all([
+        act_utiles,
+        act_limpieza,
         Actividad(
             titulo="Reforestación Parque Central",
             descripcion_corta="Únete a la jornada de plantación de árboles nativos.",
@@ -214,7 +235,7 @@ def sembrar(db: Session) -> None:
             descripcion_corta=("Asociación civil con 81 años de labor que brinda atención integral y permanente "
                                "a 104 adultos mayores en situación vulnerable."),
             ubicacion="Hidalgo Sur #637, Zona Centro, Saltillo / Monterrey", ciudad=mty, organizacion=org["fqs"],
-            modalidad=ModalidadDonacion.TIEMPO, categoria=c_don["Salud"],
+            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Salud"],
             meta=Decimal("30"), recaudado=Decimal("12"), whatsapp="8110809078",
             fecha_limite=datetime(2026, 11, 30), horario="Sábados de 10:00 AM a 1:00 PM",
             descripcion_larga=(
@@ -253,7 +274,7 @@ def sembrar(db: Session) -> None:
 
 
 # =====================================================================
-# Comunidad
+# Comunidad y Pruebas
 # =====================================================================
 
 PASSWORD_DEMO = "demo12345"  # solo para la base local de desarrollo
@@ -282,20 +303,52 @@ def sembrar_comunidad(db: Session) -> None:
     def hace(dias: int, horas: int = 0) -> datetime:
         return ahora - timedelta(days=dias, hours=horas)
 
-    # ---------- Usuarios demo (autores de publicaciones y comentarios) ----------
+    # ---------- Usuarios demo ----------
     mariana = _usuario_demo(db, "Mariana López", "mariana@demo.familiasquesuman.mx")
     carlos = _usuario_demo(db, "Carlos Treviño", "carlos@demo.familiasquesuman.mx")
     sofia = _usuario_demo(db, "Sofía Garza", "sofia@demo.familiasquesuman.mx")
     jorge = _usuario_demo(db, "Jorge Medina", "jorge@demo.familiasquesuman.mx")
 
-    # Avisos oficiales: los firma un admin. Si ya hay uno, se usa; si no, se crea una cuenta
-    # "institucional" con contraseña aleatoria (no es para iniciar sesión).
+    # Crear familia para Mariana y asociar inscripciones con asistencia para probar encuestas
+    familia_mariana = db.scalar(select(Familia).where(Familia.nombre == "Familia López"))
+    if not familia_mariana:
+        familia_mariana = Familia(nombre="Familia López")
+        db.add(familia_mariana)
+        db.flush()
+
+    mariana.familia_id = familia_mariana.id
+
+    # Buscar las actividades concluidas creadas en sembrar()
+    actividades_concluidas = db.scalars(
+        select(Actividad).where(Actividad.titulo.in_([
+            "Campaña de Donación de Útiles",
+            "Jornada Comunitaria de Limpieza"
+        ]))
+    ).all()
+
+    for act in actividades_concluidas:
+        inscripcion = InscripcionActividad(
+            actividad_id=act.id,
+            familia_id=familia_mariana.id,
+            estado=EstadoInscripcion.CONFIRMADA
+        )
+        db.add(inscripcion)
+        db.flush()
+
+        participante = InscripcionParticipante(
+            inscripcion_id=inscripcion.id,
+            usuario_id=mariana.id,
+            asistencia=EstadoAsistencia.ASISTIO
+        )
+        db.add(participante)
+
+    # Admin
     admin = db.scalar(select(Usuario).where(Usuario.rol == RolUsuario.ADMIN).order_by(Usuario.creado_en))
     if admin is None:
         admin = _usuario_demo(db, "Equipo Familias que Suman", "equipo@demo.familiasquesuman.mx",
-                              rol=RolUsuario.ADMIN, password=secrets.token_urlsafe(24))
+                                rol=RolUsuario.ADMIN, password=secrets.token_urlsafe(24))
 
-    # Categorías de publicaciones (las crea sembrar(); si faltan, se crean aquí)
+    # Categorías de publicaciones
     def cat(nombre: str) -> Categoria:
         c = db.scalar(select(Categoria).where(
             Categoria.ambito == AmbitoCategoria.PUBLICACION, Categoria.nombre == nombre))
@@ -311,7 +364,7 @@ def sembrar_comunidad(db: Session) -> None:
     def unsplash(foto: str) -> str:
         return f"https://images.unsplash.com/{foto}?q=80&w=800&auto=format&fit=crop"
 
-    # ---------- Publicaciones de la comunidad (aprobadas: se ven en el feed) ----------
+    # ---------- Publicaciones de la comunidad ----------
     reforestacion = Publicacion(
         tipo=TipoPublicacion.COMUNIDAD, autor_id=mariana.id, estado=EstadoPublicacion.APROBADA,
         titulo="Nuestra primera reforestación en familia",
@@ -360,7 +413,7 @@ def sembrar_comunidad(db: Session) -> None:
     )
     colecta = Publicacion(
         tipo=TipoPublicacion.COMUNIDAD, autor_id=carlos.id, estado=EstadoPublicacion.APROBADA,
-        titulo=None,  # sin título: la app debe mostrar solo el texto
+        titulo=None,
         contenido=("¿Alguien sabe dónde reciben juguetes usados en buen estado? Tenemos varios que "
                    "ya no usan mis hijos y nos gustaría donarlos antes de Navidad."),
         creado_en=hace(0, 6), publicada_en=hace(0, 6), revisado_por=admin.id, revisado_en=hace(0, 6),
@@ -389,7 +442,7 @@ def sembrar_comunidad(db: Session) -> None:
         creado_en=hace(2, 4), revisado_por=admin.id, revisado_en=hace(2),
     )
 
-    # ---------- Avisos oficiales (los publica el admin; salen aprobados) ----------
+    # ---------- Avisos oficiales ----------
     aviso_evento = Publicacion(
         tipo=TipoPublicacion.OFICIAL, autor_id=admin.id, estado=EstadoPublicacion.APROBADA,
         titulo="Gran Colecta de Invierno 2026",
@@ -433,7 +486,7 @@ def sembrar_comunidad(db: Session) -> None:
     likes(asilo, sofia)
     likes(salud, carlos, jorge)
 
-    # ---------- Comentarios (con sus likes) ----------
+    # ---------- Comentarios ----------
     def comentar(pub: Publicacion, autor: Usuario, texto: str, horas_despues: int,
                  le_gusta_a: tuple[Usuario, ...] = (), visible: bool = True) -> Comentario:
         c = Comentario(publicacion_id=pub.id, autor_id=autor.id, contenido=texto, visible=visible,

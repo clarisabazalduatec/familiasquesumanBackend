@@ -217,3 +217,20 @@ class IniciativaImagen(Base):
     url: Mapped[str] = mapped_column(String(500))
     orden: Mapped[int] = mapped_column(default=0, server_default="0")
     iniciativa: Mapped[Iniciativa] = relationship(back_populates="imagenes")
+
+
+class EncuestaActividad(Base):
+    __tablename__ = "encuestas_actividades"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    
+    usuario_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"))
+    actividad_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("actividades.iniciativa_id", ondelete="CASCADE"))
+    
+    # Preguntas de la encuesta
+    experiencia_general: Mapped[int]
+    utilidad_valor: Mapped[int]
+    facilidad_participacion: Mapped[int]
+    comentarios: Mapped[str | None] = mapped_column(Text)
+    
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
