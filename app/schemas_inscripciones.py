@@ -77,3 +77,15 @@ class FamiliaBreve(_Salida):
 class InscripcionAdminOut(InscripcionOut):
     familia: FamiliaBreve
     inscrito_por: UsuarioBreve | None = None
+
+
+# ---------- Salida de insignias ----------
+class InsigniaOut(BaseModel):
+    id: uuid.UUID
+    actividad_id: uuid.UUID
+    titulo_actividad: str
+    categoria: str
+    fecha_otorgada: datetime
+
+    class Config:
+        from_attributes = True
