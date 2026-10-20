@@ -208,10 +208,6 @@ async def enviar_encuesta_inicial(
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        from app.database import Base, engine
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
         act_id_col = Actividad.id if hasattr(Actividad, "id") else getattr(Actividad, "iniciativa_id")
         stmt_act = select(Actividad).where(act_id_col == actividad_id)
         actividad = await db.scalar(stmt_act)
