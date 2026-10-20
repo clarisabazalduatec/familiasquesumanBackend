@@ -39,6 +39,10 @@ class PerfilActualizar(BaseModel):
     ciudad_id: int | None = None  
     parentesco: Parentesco | None = None
 
+class CiudadActualizar(BaseModel):
+    """Solo la ciudad (dropdown del inicio)."""
+
+    ciudad_id: int = Field(gt=0)
 
 # ---------- Menores ----------
 class MenorCrear(BaseModel):

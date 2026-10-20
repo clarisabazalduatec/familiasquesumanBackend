@@ -12,7 +12,7 @@ from app.models.enums import EstadoInscripcion
 from app.models.inscripciones import InscripcionActividad, InscripcionParticipante
 from app.routers._comun import _borrar_objetos
 from app.routers.imagenes import guardar_imagen_subida
-from app.schemas_familia import PerfilActualizar, PerfilOut
+from app.schemas_familia import PerfilActualizar, PerfilOut, CiudadActualizar
 from app.schemas_inscripciones import InsigniaOut
 from app.security import obtener_usuario_actual
 
@@ -38,6 +38,21 @@ async def actualizar_mi_perfil(datos: PerfilActualizar, usuario: Usuario = Depen
     await db.refresh(usuario)
     return usuario
 
+@router.put("/me/ciudad", response_model=PerfilOut)
+async def cambiar_mi_ciudad(
+    datos: CiudadActualizar,
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cambia SOLO la ciudad del usuario. Pensado para el selector del inicio."""
+    ciudad = await db.get(Ciudad, datos.ciudad_id)
+    if ciudad is None or not ciudad.activa:
+        raise HTTPException(status_code=404, detail="La ciudad no existe o no está disponible")
+
+    if usuario.ciudad_id != ciudad.id:  # elegir la misma ciudad no escribe nada
+        usuario.ciudad = ciudad  # asigna la relación: la respuesta ya trae la ciudad nueva
+        await db.commit()
+    return usuario
 
 # ---------- Foto de perfil ----------
 
