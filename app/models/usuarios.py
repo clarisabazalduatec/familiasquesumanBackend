@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, false, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,10 @@ class Usuario(Base):
     ciudad_id: Mapped[int | None] = mapped_column(ForeignKey("ciudades.id"), index=True)
     ciudad: Mapped[Ciudad | None] = relationship(lazy="selectin")
     
+    # False hasta que la persona escribe el código que le llegó al correo al registrarse.
+    # Sin verificar puede entrar y ver todo, pero no inscribirse, publicar ni comentar.
+    correo_verificado: Mapped[bool] = mapped_column(default=False, server_default=false())
+
     # Clave del almacén ("abc.jpg"); la API la devuelve como "/imagenes/abc.jpg". None = sin foto.
     foto_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
@@ -50,6 +54,22 @@ class Usuario(Base):
 
     familia: Mapped["Familia | None"] = relationship(back_populates="adultos")
     mensajes: Mapped[list["MensajeChat"]] = relationship(back_populates="usuario")
+
+
+class VerificacionCorreo(Base):
+    """Código de 6 dígitos pendiente para verificar el correo de un usuario (uno por usuario).
+    Se guarda solo el hash del código; se borra al verificar."""
+
+    __tablename__ = "verificaciones_correo"
+
+    usuario_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True
+    )
+    codigo_hash: Mapped[str] = mapped_column(String(64))
+    sal: Mapped[str] = mapped_column(String(32))
+    enviado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expira_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    intentos: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
 
 
 class Familia(Base):

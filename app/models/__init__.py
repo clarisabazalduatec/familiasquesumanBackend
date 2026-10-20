@@ -25,7 +25,7 @@ from app.models.iniciativas import (
     Proyecto,
     ProyectoOpcionApoyo,
 )
-from app.models.usuarios import Familia, FamiliaMenor, InvitacionFamilia, MensajeChat, Usuario
+from app.models.usuarios import Familia, FamiliaMenor, InvitacionFamilia, MensajeChat, Usuario, VerificacionCorreo
 from app.models.visiteo import CentroNecesidad, CentroVisiteo
 
 
@@ -51,6 +51,6 @@ __all__ = [
     "TipoApoyo", "TipoCentro", "TipoIniciativa", "Usuario","Publicacion",
     "PublicacionImagen","PublicacionLike","Comentario","ComentarioLike",
     "TipoPublicacion","EstadoPublicacion",
-    "InscripcionActividad", "InscripcionParticipante", "EstadoAsistencia", "EstadoInscripcion", 
+    "InscripcionActividad", "InscripcionParticipante", "VerificacionCorreo", "EstadoAsistencia", "EstadoInscripcion", 
     "Notificacion", "TipoNotificacion", "DestinoNotificacion",
 ]

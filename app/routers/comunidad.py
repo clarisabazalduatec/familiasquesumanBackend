@@ -36,6 +36,8 @@ from app.security import (
     requiere_admin,
 )
 
+from app.verificacion_correo import requiere_correo_verificado
+
 router = APIRouter(prefix="/comunidad", tags=["comunidad"])
 
 ## subir imagenes para comunidad (sin ser admin)
@@ -101,7 +103,7 @@ async def listar_publicaciones(
 async def crear_publicacion(
     request: Request,
     datos: PublicacionCrear,
-    usuario: Usuario = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(requiere_correo_verificado),  # correo verificado
     db: AsyncSession = Depends(get_db),
 ):
     # La categoría es opcional; antes, sin categoría, `categoria` quedaba sin definir (500)
@@ -487,7 +489,7 @@ async def crear_comentario(
     request: Request,
     publicacion_id: uuid.UUID,
     datos: ComentarioCrear,
-    usuario: Usuario = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(requiere_correo_verificado),  # correo verificado
     db: AsyncSession = Depends(get_db),
 ):
     publicacion = await db.get(Publicacion, publicacion_id)

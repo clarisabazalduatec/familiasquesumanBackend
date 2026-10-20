@@ -343,7 +343,8 @@ def _usuario_demo(db: Session, nombre: str, email: str, rol: RolUsuario = RolUsu
     if existente:
         return existente
     u = Usuario(nombre=nombre, email=email, password_hash=hashear_password(password),
-                ciudad=db.scalar(select(Ciudad).where(Ciudad.nombre == ciudad)), rol=rol)
+                ciudad=db.scalar(select(Ciudad).where(Ciudad.nombre == ciudad)), rol=rol,
+                correo_verificado=True)  # cuentas demo: ya verificadas
     db.add(u)
     db.flush()
     return u
