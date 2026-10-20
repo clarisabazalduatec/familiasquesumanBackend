@@ -1,18 +1,19 @@
-"""Carga los datos de ejemplo (los antiguos mocks de la app) en PostgreSQL.
+"""Carga el catálogo de ejemplo en PostgreSQL: ciudades, categorías, organizaciones,
+actividades, proyectos, donaciones y centros del directorio.
 
-Uso:  docker compose exec api python -m app.seed
+NO crea usuarios ni nada que dependa de ellos (publicaciones, comentarios, likes,
+inscripciones, encuestas): no hay cuentas demo ni contraseñas conocidas, así que se
+puede correr también en producción.
+
+Uso:  python -m app.seed      (dentro del contenedor de la API)
 
 Ubicación de cada cosa (igual que en la base desde la migración a1c7e5b9d3f2):
   - ciudad    -> FK a ciudades (Monterrey / Hermosillo). Es lo que filtra por la ciudad del perfil.
   - direccion -> texto ("Parque Central, Puerta Norte").
   - ubicacion -> link de Google Maps; la app lo muestra como botón "Cómo llegar".
 Las fechas de las actividades son relativas a HOY: siempre hay próximas y concluidas.
-Es idempotente por partes:
-  - Catálogo (ciudades, actividades, proyectos, donaciones, centros): solo si no hay ciudades.
-  - Comunidad (usuarios demo, publicaciones, avisos, likes y comentarios): solo si no hay
-    publicaciones. Así se puede correr en una base que ya tenía el catálogo.
+Es idempotente: si ya hay ciudades, no hace nada.
 """
-import os
 from urllib.parse import quote_plus
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -23,13 +24,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (
     Actividad, AmbitoCategoria, Categoria, CentroNecesidad, CentroVisiteo, Ciudad,
-    Comentario, ComentarioLike, Donacion, DonacionEtiqueta, DonacionOpcion, EstadoAsistencia,
-    EstadoInscripcion, EstadoProyecto, EstadoPublicacion, Familia, GrupoEtiqueta,
-    IniciativaImagen, InscripcionActividad, InscripcionParticipante, ModalidadDonacion,
-    Organizacion, Proyecto, ProyectoOpcionApoyo, Publicacion, PublicacionImagen,
-    PublicacionLike, RolUsuario, TipoApoyo, TipoCentro, TipoPublicacion, Usuario,
+    Donacion, DonacionEtiqueta, DonacionOpcion, EstadoProyecto, GrupoEtiqueta,
+    IniciativaImagen, ModalidadDonacion, Organizacion, Proyecto, ProyectoOpcionApoyo,
+    TipoApoyo, TipoCentro,
 )
-from app.security import hashear_password
 
 # Monterrey/Hermosillo: UTC-6 todo el año (sin horario de verano)
 TZ = timezone(timedelta(hours=-6))
@@ -329,260 +327,7 @@ def sembrar(db: Session) -> None:
     print("Datos de ejemplo cargados correctamente.")
 
 
-# =====================================================================
-# Comunidad y Pruebas
-# =====================================================================
-
-PASSWORD_DEMO = "demo12345"  # solo para la base local de desarrollo
-
-
-def _usuario_demo(db: Session, nombre: str, email: str, rol: RolUsuario = RolUsuario.USUARIO,
-                 password: str = PASSWORD_DEMO, ciudad: str = "Monterrey") -> Usuario:
-    """Regresa el usuario con ese correo; si no existe, lo crea (en esa ciudad)."""
-    existente = db.scalar(select(Usuario).where(Usuario.email == email))
-    if existente:
-        return existente
-    u = Usuario(nombre=nombre, email=email, password_hash=hashear_password(password),
-                ciudad=db.scalar(select(Ciudad).where(Ciudad.nombre == ciudad)), rol=rol,
-                correo_verificado=True)  # cuentas demo: ya verificadas
-    db.add(u)
-    db.flush()
-    return u
-
-
-def sembrar_comunidad(db: Session) -> None:
-    if db.scalar(select(func.count(Publicacion.id))):
-        print("Ya hay publicaciones; no se siembra la comunidad.")
-        return
-
-    ahora = datetime.now(TZ)
-
-    def hace(dias: int, horas: int = 0) -> datetime:
-        return ahora - timedelta(days=dias, hours=horas)
-
-    # ---------- Usuarios demo ----------
-    mariana = _usuario_demo(db, "Mariana López", "mariana@demo.familiasquesuman.mx")
-    carlos = _usuario_demo(db, "Carlos Treviño", "carlos@demo.familiasquesuman.mx")
-    sofia = _usuario_demo(db, "Sofía Garza", "sofia@demo.familiasquesuman.mx")
-    jorge = _usuario_demo(db, "Jorge Medina", "jorge@demo.familiasquesuman.mx", ciudad="Hermosillo")
-
-    # Crear familia para Mariana y asociar inscripciones con asistencia para probar encuestas
-    familia_mariana = db.scalar(select(Familia).where(Familia.nombre == "Familia López"))
-    if not familia_mariana:
-        familia_mariana = Familia(nombre="Familia López")
-        db.add(familia_mariana)
-        db.flush()
-
-    mariana.familia_id = familia_mariana.id
-
-    # Buscar las actividades concluidas creadas en sembrar()
-    actividades_concluidas = db.scalars(
-        select(Actividad).where(Actividad.titulo.in_([
-            "Campaña de Donación de Útiles",
-            "Jornada Comunitaria de Limpieza"
-        ]))
-    ).all()
-
-    for act in actividades_concluidas:
-        inscripcion = InscripcionActividad(
-            actividad_id=act.id,
-            familia_id=familia_mariana.id,
-            estado=EstadoInscripcion.CONFIRMADA
-        )
-        db.add(inscripcion)
-        db.flush()
-
-        participante = InscripcionParticipante(
-            inscripcion_id=inscripcion.id,
-            usuario_id=mariana.id,
-            asistencia=EstadoAsistencia.ASISTIO
-        )
-        db.add(participante)
-
-    # Admin
-    admin = db.scalar(select(Usuario).where(Usuario.rol == RolUsuario.ADMIN).order_by(Usuario.creado_en))
-    if admin is None:
-        # El admin NUNCA usa la contraseña demo: es una cuenta con todos los permisos y la
-        # contraseña estaba en el repo. Hay que definir SEED_ADMIN_PASSWORD (y no se imprime).
-        password_admin = os.getenv("SEED_ADMIN_PASSWORD", "")
-        if len(password_admin) < 12:
-            raise SystemExit("Define SEED_ADMIN_PASSWORD (mínimo 12 caracteres) en el .env para crear el admin demo.")
-        admin = _usuario_demo(db, "Equipo Familias que Suman", "equipo@demo.familiasquesuman.mx",
-                              rol=RolUsuario.ADMIN, password=password_admin)
-        print("Admin creado: equipo@demo.familiasquesuman.mx (contraseña: la de SEED_ADMIN_PASSWORD)")
-
-    # Categorías de publicaciones
-    def cat(nombre: str) -> Categoria:
-        c = db.scalar(select(Categoria).where(
-            Categoria.ambito == AmbitoCategoria.PUBLICACION, Categoria.nombre == nombre))
-        if c is None:
-            c = Categoria(ambito=AmbitoCategoria.PUBLICACION, nombre=nombre)
-            db.add(c)
-            db.flush()
-        return c
-
-    def fotos(*urls: str) -> list[PublicacionImagen]:
-        return [PublicacionImagen(url=u, orden=i) for i, u in enumerate(urls)]
-
-    def unsplash(foto: str) -> str:
-        return f"https://images.unsplash.com/{foto}?q=80&w=800&auto=format&fit=crop"
-
-    # ---------- Publicaciones de la comunidad ----------
-    reforestacion = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=mariana.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
-        titulo="Nuestra primera reforestación en familia",
-        contenido=("El sábado fuimos con los niños a plantar árboles al Parque Central. Plantamos 12 "
-                   "encinos y aprendimos a cuidarlos. Los niños ya quieren regresar a ver cómo crecen. "
-                   "¡Gracias a Fundación Verde Vivo por organizar!"),
-        categoria=cat("Medio Ambiente"), direccion="Parque Central, Monterrey",
-        creado_en=hace(6), publicada_en=hace(6), revisado_por=admin.id, revisado_en=hace(6),
-        imagenes=fotos(unsplash("photo-1542601906990-b4d3fb778b09"),
-                       unsplash("photo-1466692476868-aef1dfb1e735")),
-    )
-    comedor = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=carlos.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
-        titulo="Servimos 150 cenas en el Comedor Solidario",
-        contenido=("Ayer apoyamos en el Comedor Solidario del Barrio Sur. Entre todos los voluntarios "
-                   "preparamos y servimos 150 cenas calientes. Si pueden, vayan: siempre hace falta "
-                   "una mano para lavar y servir."),
-        categoria=cat("Comedor Solidario"), direccion="Centro Comunitario Barrio Sur",
-        creado_en=hace(4), publicada_en=hace(4), revisado_por=admin.id, revisado_en=hace(4),
-        imagenes=fotos(unsplash("photo-1488521787991-ed7bbaae773c")),
-    )
-    lectura = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=sofia.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
-        titulo="Tarde de cuentos en la Biblioteca Norte",
-        contenido=("Mi hija de 8 años leyó en voz alta para niños más pequeños. Fue muy bonito verla "
-                   "tan segura. Recomiendo mucho la actividad de Lectura para Niños para ir en familia."),
-        categoria=cat("Educación"), direccion="Biblioteca Norte",
-        creado_en=hace(3), publicada_en=hace(3), revisado_por=admin.id, revisado_en=hace(3),
-        imagenes=fotos(unsplash("photo-1503676260728-1c00da094a0b")),
-    )
-    asilo = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, ciudad_id=jorge.ciudad_id, estado=EstadoPublicacion.APROBADA,
-        titulo="Visita a la Morada del Anciano en Cadereyta",
-        contenido=("Llevamos despensa y pasamos la tarde platicando con los abuelitos. Nos contaron "
-                   "historias increíbles. Ellos necesitan sobre todo compañía; una visita les cambia el día."),
-        categoria=cat("Voluntariado"), direccion="Cadereyta, N.L.",
-        creado_en=hace(2), publicada_en=hace(2), revisado_por=admin.id, revisado_en=hace(2),
-    )
-    salud = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=mariana.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
-        titulo="Jornada de salud gratuita en la colonia",
-        contenido=("Este domingo habrá toma de presión, glucosa y vacunas en el kiosco de la colonia "
-                   "Independencia, de 9 a 13 h. Corran la voz con los vecinos."),
-        categoria=cat("Salud"), direccion="Col. Independencia, Monterrey",
-        creado_en=hace(1, 5), publicada_en=hace(1, 5), revisado_por=admin.id, revisado_en=hace(1, 5),
-    )
-    colecta = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=carlos.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
-        titulo=None,
-        contenido=("¿Alguien sabe dónde reciben juguetes usados en buen estado? Tenemos varios que "
-                   "ya no usan mis hijos y nos gustaría donarlos antes de Navidad."),
-        creado_en=hace(0, 6), publicada_en=hace(0, 6), revisado_por=admin.id, revisado_en=hace(0, 6),
-    )
-
-    # ---------- Para probar moderación ----------
-    pendiente1 = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=sofia.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.PENDIENTE,
-        titulo="Recolecta de útiles escolares",
-        contenido=("Estamos juntando cuadernos, colores y mochilas para la escuela San Bernabé. "
-                   "Si alguien quiere sumarse, el punto de acopio es la tienda de la esquina de Aztlán."),
-        categoria=cat("Educación"), direccion="Col. San Bernabé",
-        creado_en=hace(0, 3),
-    )
-    pendiente2 = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, ciudad_id=jorge.ciudad_id, estado=EstadoPublicacion.PENDIENTE,
-        titulo="Limpieza del río Santa Catarina",
-        contenido="Propongo organizar una limpieza del río el próximo mes. ¿Quién se apunta?",
-        categoria=cat("Medio Ambiente"), creado_en=hace(0, 1),
-    )
-    rechazada = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, ciudad_id=jorge.ciudad_id, estado=EstadoPublicacion.RECHAZADA,
-        titulo="Vendo bicicleta",
-        contenido="Vendo bicicleta rodada 26 en buen estado, interesados mándenme mensaje.",
-        motivo_rechazo="La comunidad es solo para voluntariado y ayuda; no se permiten ventas.",
-        creado_en=hace(2, 4), revisado_por=admin.id, revisado_en=hace(2),
-    )
-
-    # ---------- Avisos oficiales ----------
-    aviso_evento = Publicacion(
-        tipo=TipoPublicacion.OFICIAL, autor_id=admin.id, estado=EstadoPublicacion.APROBADA,
-        titulo="Gran Colecta de Invierno 2026",
-        contenido=("Familias que Suman organiza su colecta anual de cobijas y ropa abrigadora. "
-                   "Habrá centros de acopio en Monterrey y San Pedro. ¡Te esperamos con tu familia!"),
-        evento_inicia_en=ahora + timedelta(days=10), evento_termina_en=ahora + timedelta(days=10, hours=6),
-        publico_objetivo="Todas las familias",
-        creado_en=hace(1), publicada_en=hace(1),
-        imagenes=fotos(unsplash("photo-1434389677669-e08b4cac3105")),
-    )
-    aviso_guia = Publicacion(
-        tipo=TipoPublicacion.OFICIAL, autor_id=admin.id, estado=EstadoPublicacion.APROBADA,
-        titulo="Guía para tu primera visita a un asilo",
-        contenido=("Preparamos una guía con recomendaciones para visitar asilos y casas hogar en "
-                   "familia: qué llevar, cómo platicar con los adultos mayores y qué evitar."),
-        publico_objetivo="Familias con niños",
-        documento_url="https://www.familiasquesuman.mx/guias/primera-visita.pdf",
-        documento_nombre="Guía primera visita.pdf",
-        creado_en=hace(5), publicada_en=hace(5),
-    )
-    aviso_app = Publicacion(
-        tipo=TipoPublicacion.OFICIAL, autor_id=admin.id, estado=EstadoPublicacion.APROBADA,
-        titulo="Nuevo: asistente en la app",
-        contenido=("Ya puedes preguntarle al asistente por actividades, proyectos, donaciones y "
-                   "centros para visitar. Lo encuentras en el botón de chat."),
-        creado_en=hace(0, 2), publicada_en=hace(0, 2),
-    )
-
-    publicaciones = [reforestacion, comedor, lectura, asilo, salud, colecta,
-                     pendiente1, pendiente2, rechazada, aviso_evento, aviso_guia, aviso_app]
-    db.add_all(publicaciones)
-    db.flush()
-
-    # ---------- Likes ----------
-    def likes(pub: Publicacion, *usuarios: Usuario) -> None:
-        db.add_all([PublicacionLike(publicacion_id=pub.id, usuario_id=u.id) for u in usuarios])
-
-    likes(reforestacion, carlos, sofia, jorge)
-    likes(comedor, mariana, sofia)
-    likes(lectura, mariana, carlos, jorge)
-    likes(asilo, sofia)
-    likes(salud, carlos, jorge)
-
-    # ---------- Comentarios ----------
-    def comentar(pub: Publicacion, autor: Usuario, texto: str, horas_despues: int,
-                 le_gusta_a: tuple[Usuario, ...] = (), visible: bool = True) -> Comentario:
-        c = Comentario(publicacion_id=pub.id, autor_id=autor.id, contenido=texto, visible=visible,
-                       creado_en=(pub.publicada_en or pub.creado_en) + timedelta(hours=horas_despues))
-        db.add(c)
-        db.flush()
-        db.add_all([ComentarioLike(comentario_id=c.id, usuario_id=u.id) for u in le_gusta_a])
-        return c
-
-    comentar(reforestacion, carlos, "¡Qué padre! ¿Cuándo es la siguiente jornada?", 2, (mariana,))
-    comentar(reforestacion, mariana, "Creo que el próximo mes, la publican en Actividades.", 3, (carlos, sofia))
-    comentar(reforestacion, sofia, "Nos apuntamos la próxima vez.", 5)
-    comentar(comedor, jorge, "Gracias por compartir, el sábado vamos con mis hijos.", 1, (carlos,))
-    comentar(lectura, carlos, "Qué bonito, felicidades a tu hija.", 2, (sofia,))
-    comentar(lectura, jorge, "Mi hijo también quiere participar.", 6)
-    comentar(asilo, mariana, "¿Qué es lo que más necesitan llevar?", 1)
-    comentar(asilo, jorge, "Leche, ensure y artículos de limpieza. Viene todo en el Directorio.", 2, (mariana,))
-    comentar(colecta, sofia, "En Quiero Donar hay una campaña que recibe juguetes, revísala.", 1, (carlos,))
-    comentar(colecta, jorge, "Comentario ocultado por moderación.", 2, visible=False)
-
-    db.commit()
-    print(f"Comunidad cargada: {len(publicaciones)} publicaciones, usuarios demo con contraseña "
-          f"'{PASSWORD_DEMO}' (ej. mariana@demo.familiasquesuman.mx).")
-
-
 if __name__ == "__main__":
-    # Los datos demo traen cuentas con contraseña conocida: nunca en producción
-    if settings.es_prod:
-        raise SystemExit("ENTORNO=prod: la semilla de datos demo está deshabilitada en producción.")
-    # Se revisa antes de sembrar nada, para no dejar la base a medias
-    if len(os.getenv("SEED_ADMIN_PASSWORD", "")) < 12:
-        raise SystemExit("Define SEED_ADMIN_PASSWORD (mínimo 12 caracteres) en el .env para crear el admin demo.")
     engine = create_engine(settings.database_url_sync)
     with Session(engine) as db:
         sembrar(db)
-        sembrar_comunidad(db)
