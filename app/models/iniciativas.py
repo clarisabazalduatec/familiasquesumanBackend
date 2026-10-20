@@ -41,7 +41,8 @@ class Iniciativa(Base):
     tipo: Mapped[TipoIniciativa] = mapped_column(enum_col(TipoIniciativa, "tipo_iniciativa"))
     titulo: Mapped[str] = mapped_column(String(160))
     descripcion_corta: Mapped[str] = mapped_column(String(300))
-    ubicacion: Mapped[str | None] = mapped_column(String(200))
+    direccion: Mapped[str | None] = mapped_column(String(200))   # texto legado
+    ubicacion: Mapped[str | None] = mapped_column(String(500))   # link de Google Maps
     ciudad_id: Mapped[int] = mapped_column(ForeignKey("ciudades.id"))
     organizacion_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizaciones.id", ondelete="SET NULL")

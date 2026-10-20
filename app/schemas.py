@@ -7,11 +7,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.almacen import url_publica
 
+from app.schemas_catalogo import CiudadOut
+
 class UsuarioCrear(BaseModel):
     nombre: str
     email: EmailStr
     password: str
-    ubicacion: str | None = None
+    ciudad_id: int | None = None   
 
 
 class UsuarioLogin(BaseModel):
@@ -25,7 +27,7 @@ class UsuarioRespuesta(BaseModel):
     id: uuid.UUID
     nombre: str
     email: EmailStr
-    ubicacion: str | None = None
+    ciudad: CiudadOut | None = None
     rol: RolUsuario = RolUsuario.USUARIO
     foto_url: str | None = None
 

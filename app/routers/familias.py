@@ -160,7 +160,7 @@ async def salir_de_familia(
         # ON DELETE CASCADE borra menores e invitaciones.
         await db.execute(delete(Familia).where(Familia.id == familia_id))
 
-    await promover_varias(db, ids)   # justo antes del commit
+    await promover_varias(db, ids)  
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

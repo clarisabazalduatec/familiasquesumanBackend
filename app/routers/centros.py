@@ -72,7 +72,7 @@ async def _aplicar(db: AsyncSession, centro: CentroVisiteo, datos: CentroGuardar
     centro.descripcion_corta = datos.descripcion_corta.strip()
     centro.informacion_general = datos.informacion_general.strip()
     centro.direccion = datos.direccion.strip()
-    centro.mapa_url = datos.mapa_url
+    centro.ubicacion = datos.ubicacion
     centro.ciudad_id = await _ciudad_id(db, datos.ciudad_id)
     centro.logo_url = logo[0] if logo else None
     centro.como_ayudar = datos.como_ayudar

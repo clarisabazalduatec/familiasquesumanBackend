@@ -156,14 +156,15 @@ async def buscar_actividades(db: AsyncSession, texto: str | None = None) -> dict
     todas = list((await db.execute(stmt)).scalars().all())
     orden, hubo = _ordenar(
         todas, texto,
-        lambda a: (a.titulo, f"{a.descripcion_corta} {a.acerca_de or ''} {a.categoria.nombre} {a.ubicacion or ''}"),
+        lambda a: (a.titulo, f"{a.descripcion_corta} {a.acerca_de or ''} {a.categoria.nombre} {a.direccion or ''} {a.ciudad.nombre}"),
     )
     items = [
         _limpio({
             "titulo": a.titulo,
             "categoria": a.categoria.nombre,
             "cuando": f"{_fecha(a.inicia_en)} a {a.termina_en.astimezone(ZONA):%H:%M}",
-            "donde": a.ubicacion or a.ciudad.nombre,
+            "donde": a.ciudad.nombre,
+            "como_llegar": a.ubicacion,
             "organiza": a.organizacion.nombre if a.organizacion else None,
             "lugares_disponibles": a.plazas_disponibles,
             "cupo_total": a.cupo_total,
@@ -192,7 +193,8 @@ async def buscar_proyectos(db: AsyncSession, texto: str | None = None, estado: s
             "titulo": p.titulo,
             "estado": "activo" if p.estado.value == "ACTIVO" else "anterior (ya no recibe apoyo)",
             "beneficiarios": p.beneficiarios,
-            "donde": p.ubicacion or p.ciudad.nombre,
+            "donde": p.ciudad.nombre,
+            "como_llegar": p.ubicacion,
             "descripcion": _corto(p.descripcion_corta),
             "acerca_de": _corto(p.acerca_de),
             "como_ayudar": _corto(p.como_ayudar),
@@ -226,7 +228,8 @@ async def buscar_donaciones(db: AsyncSession, texto: str | None = None, modalida
             "tipo": "campaña de dinero" if d.modalidad == ModalidadDonacion.CAMPANA else "donación en especie",
             "categoria": d.categoria.nombre if d.categoria else None,
             "organiza": d.organizacion.nombre if d.organizacion else None,
-            "donde_entregar": d.ubicacion,
+            "donde_entregar": d.ciudad.nombre,
+            "como_llegar": d.ubicacion,
             "descripcion": _corto(d.descripcion_corta),
             "detalle": _corto(d.descripcion_larga),
             "meta": float(d.meta) if d.meta is not None else None,
@@ -256,7 +259,7 @@ async def buscar_centros(db: AsyncSession, texto: str | None = None, tipo: str |
             "nombre": c.nombre,
             "tipo": nombres_tipo[c.tipo.value],
             "direccion": c.direccion,
-            "como_llegar": c.mapa_url,
+            "como_llegar": c.ubicacion,
             "descripcion": _corto(c.descripcion_corta),
             "informacion": _corto(c.informacion_general),
             "necesidades": [_corto(n.descripcion) for n in c.necesidades],
@@ -288,7 +291,7 @@ async def mi_cuenta(db: AsyncSession, usuario: Usuario | None) -> dict:
     datos: dict = {
         "sesion_iniciada": True,
         "nombre": usuario.nombre,
-        "ubicacion": usuario.ubicacion,
+        "ciudad": usuario.ciudad.nombre if usuario.ciudad else None,
         "es_administrador": usuario.rol.value == "ADMIN",
     }
 

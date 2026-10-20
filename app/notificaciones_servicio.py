@@ -161,7 +161,7 @@ async def generar_recordatorios(db: AsyncSession, usuario: Usuario) -> None:
     )
     actividades = (await db.execute(stmt)).scalars().all()
     for a in actividades:
-        lugar = f" en {a.ubicacion}" if a.ubicacion else ""
+        lugar = f" en {a.ciudad.nombre}" if a.ubicacion else ""
         await notificar(
             db, usuario.id, TipoNotificacion.RECORDATORIO_ACTIVIDAD,
             "Recordatorio de actividad",

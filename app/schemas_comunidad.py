@@ -2,9 +2,10 @@ import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import EstadoPublicacion, TipoPublicacion
-from app.schemas_catalogo import CategoriaOut
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.almacen import url_publica
+
+from app.schemas_catalogo import CategoriaOut, CiudadOut, _link_mapa
 
 ## base comun
 
@@ -44,8 +45,21 @@ class PublicacionCrear(_Entrada):
     titulo: str = Field(min_length=1, max_length=200)
     contenido: str = Field(min_length=1, max_length=5000)
     categoria_id: int | None = None
-    ubicacion: str | None = Field(default=None, max_length=250)
+    
+    ciudad_id: int | None = None
+    ubicacion: str | None = Field(default=None, max_length=500)
+    
     imagenes: list[str] = Field(default_factory=list, max_length=10)
+    
+    @field_validator("ubicacion", mode="before")
+    @classmethod
+    def _vacio_es_null(cls, v):
+        return (v.strip() or None) if isinstance(v, str) else v
+
+    @field_validator("ubicacion")
+    @classmethod
+    def _es_link(cls, v):
+        return _link_mapa(v)
 
 ##administrador
 class AvisoOficialCrear(_Entrada):
@@ -65,7 +79,10 @@ class PublicacionResumen(_Salida):
     tipo: TipoPublicacion
     titulo: str | None = None
     contenido: str
+    
     ubicacion: str | None = None
+    ciudad: CiudadOut | None = None
+    
     estado: EstadoPublicacion
     autor: AutorPublicacion
     categoria: CategoriaOut | None = None

@@ -3,9 +3,9 @@ import uuid
 from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
-from app.almacen import url_publica
-
 from app.models.enums import EstadoInvitacion, Parentesco, RolUsuario
+from app.schemas_catalogo import CiudadOut
+from app.almacen import url_publica
 
 
 class _Salida(BaseModel):
@@ -25,7 +25,8 @@ class PerfilOut(_ConFoto):
     id: uuid.UUID
     nombre: str
     email: EmailStr
-    ubicacion: str | None = None
+    ciudad_id: int | None = None
+    ciudad: CiudadOut | None = None
     rol: RolUsuario
     parentesco: Parentesco | None = None
     familia_id: uuid.UUID | None = None
@@ -35,7 +36,7 @@ class PerfilActualizar(BaseModel):
     """Todos opcionales: solo se cambian los campos que se manden."""
 
     nombre: str | None = Field(None, min_length=1, max_length=120)
-    ubicacion: str | None = Field(None, max_length=120)
+    ciudad_id: int | None = None  
     parentesco: Parentesco | None = None
 
 

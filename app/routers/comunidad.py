@@ -22,7 +22,7 @@ from app.models import (
     Usuario,
     Comentario,
 )
-from app.routers._comun import Paginacion
+from app.routers._comun import Paginacion, _ciudad_id
 from app.models import DestinoNotificacion, TipoNotificacion
 from app.notificaciones_servicio import (
     nombre_publicacion, notificar, notificar_admins, notificar_like, notificar_usuarios,
@@ -125,6 +125,7 @@ async def crear_publicacion(
         titulo=datos.titulo,
         contenido=datos.contenido,
         categoria_id=datos.categoria_id,
+        ciudad_id=await _ciudad_id(db, datos.ciudad_id),
         ubicacion=datos.ubicacion,
         estado=EstadoPublicacion.PENDIENTE,
         imagenes=[

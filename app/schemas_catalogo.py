@@ -18,6 +18,10 @@ from app.almacen import url_publica
 class _Salida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+def _link_mapa(v):
+    if v is not None and not v.startswith(("http://", "https://")):
+        raise ValueError("La ubicación debe ser un link de Google Maps (https://...)")
+    return v
 
 # ---------- Catálogos ----------
 class CiudadOut(_Salida):
@@ -155,6 +159,8 @@ class CentroDetalle(CentroResumen):
     recomendaciones: str | None = None
     telefono: str | None = None
     whatsapp: str | None = None
+    
+    ubicacion: str | None = None
     mapa_url: str | None = None
 
     @field_validator("necesidades", mode="before")
@@ -185,7 +191,7 @@ class ProyectoGuardar(BaseModel):
     descripcion_corta: str = Field(min_length=1, max_length=300)
     beneficiarios: str = Field(min_length=1, max_length=120)
     estado: EstadoProyecto = EstadoProyecto.ACTIVO
-    ubicacion: str | None = Field(default=None, max_length=200)
+    ubicacion: str | None = Field(default=None, max_length=500)
     ciudad_id: int | None = None  # None = Monterrey
     acerca_de: str | None = None
     descripcion_larga: str | None = None
@@ -201,6 +207,7 @@ class ProyectoGuardar(BaseModel):
         "ubicacion", "acerca_de", "descripcion_larga", "como_ayudar",
         "instagram_url", "whatsapp", "telefono", "logo_url", mode="before",
     )
+    
     @classmethod
     def _vacio_es_null(cls, v):
         # "" o "   " desde la app = campo vacío
@@ -209,7 +216,9 @@ class ProyectoGuardar(BaseModel):
             return v or None
         return v
 
-
+    @classmethod
+    def _es_link(cls, v):
+        return _link_mapa(v)
 
 class CentroGuardar(BaseModel):
     """Crear (POST) o reemplazar (PUT) un centro del directorio desde el formulario de admin.
@@ -223,7 +232,10 @@ class CentroGuardar(BaseModel):
     descripcion_corta: str = Field(min_length=1, max_length=300)
     informacion_general: str = Field(min_length=1)
     direccion: str = Field(min_length=1, max_length=250)
+    
+    ubicacion: str | None = Field(default=None, max_length=500)
     mapa_url: str | None = Field(default=None, max_length=500)
+    
     ciudad_id: int | None = None  # None = Monterrey
     logo_url: str | None = Field(default=None, max_length=500)
     como_ayudar: str | None = None
@@ -235,7 +247,7 @@ class CentroGuardar(BaseModel):
     necesidades: list[str] = Field(default_factory=list, max_length=30)
 
     @field_validator(
-        "mapa_url", "logo_url", "como_ayudar", "recomendaciones", "telefono", "whatsapp",
+        "ubicacion", "logo_url", "como_ayudar", "recomendaciones", "telefono", "whatsapp",
         mode="before",
     )
     @classmethod
@@ -244,13 +256,11 @@ class CentroGuardar(BaseModel):
             v = v.strip()
             return v or None
         return v
-
-    @field_validator("mapa_url")
+    
+    @field_validator("ubicacion")
     @classmethod
     def _es_link(cls, v):
-        if v is not None and not v.startswith(("http://", "https://")):
-            raise ValueError("El link de cómo llegar debe empezar con https://")
-        return v
+        return _link_mapa(v)
 
     @field_validator("necesidades")
     @classmethod
@@ -279,12 +289,17 @@ class ActividadGuardar(BaseModel):
     imagenes: list[str] = Field(default_factory=list, max_length=10)
 
     @field_validator("ubicacion", "organizacion_nombre", "acerca_de", mode="before")
+    
     @classmethod
     def _vacio_es_null(cls, v):
         if isinstance(v, str):
             v = v.strip()
             return v or None
         return v
+    
+    @classmethod
+    def _es_link(cls, v):
+        return _link_mapa(v)
 
     @field_validator("inicia_en", "termina_en")
     @classmethod
@@ -348,3 +363,7 @@ class DonacionGuardar(BaseModel):
             v = v.strip()
             return v or None
         return v
+    
+    @classmethod
+    def _es_link(cls, v):
+        return _link_mapa(v)

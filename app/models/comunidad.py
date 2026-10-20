@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models.enums import EstadoPublicacion, TipoPublicacion, enum_col
+from app.models.catalogo import Ciudad
 
 
 class Publicacion(Base):
@@ -45,7 +46,9 @@ class Publicacion(Base):
         ForeignKey("categorias.id", ondelete="SET NULL")
     )
 
-    ubicacion: Mapped[str | None] = mapped_column(String(250))
+    direccion: Mapped[str | None] = mapped_column(String(250))   # texto legado
+    ciudad_id: Mapped[int | None] = mapped_column(ForeignKey("ciudades.id"), index=True)
+    ubicacion: Mapped[str | None] = mapped_column(String(500))   # link de Google Maps
 
     estado: Mapped[EstadoPublicacion] = mapped_column(
         enum_col(EstadoPublicacion, "estado_publicacion"),
@@ -121,6 +124,8 @@ class Publicacion(Base):
         cascade="all, delete-orphan",
         lazy="selectin"
     )
+
+    ciudad: Mapped[Ciudad | None] = relationship(lazy="selectin")
 
     __table_args__ = (
         CheckConstraint(

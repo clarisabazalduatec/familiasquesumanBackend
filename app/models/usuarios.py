@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models.enums import EstadoInvitacion, Parentesco, RolUsuario, enum_col
-
+from app.models.catalogo import Ciudad 
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -16,8 +16,11 @@ class Usuario(Base):
     nombre: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    ubicacion: Mapped[str | None] = mapped_column(String(120), nullable=True)
-        # Clave del almacén ("abc.jpg"); la API la devuelve como "/imagenes/abc.jpg". None = sin foto.
+    
+    ciudad_id: Mapped[int | None] = mapped_column(ForeignKey("ciudades.id"), index=True)
+    ciudad: Mapped[Ciudad | None] = relationship(lazy="selectin")
+    
+    # Clave del almacén ("abc.jpg"); la API la devuelve como "/imagenes/abc.jpg". None = sin foto.
     foto_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

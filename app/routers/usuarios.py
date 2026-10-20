@@ -1,13 +1,13 @@
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Usuario
+from app.models import Ciudad, Usuario
 from app.models.enums import EstadoInscripcion
 from app.models.inscripciones import InscripcionActividad, InscripcionParticipante
 from app.routers._comun import _borrar_objetos
@@ -25,12 +25,12 @@ async def mi_perfil(usuario: Usuario = Depends(obtener_usuario_actual)):
 
 
 @router.patch("/me", response_model=PerfilOut)
-async def actualizar_mi_perfil(
-    datos: PerfilActualizar,
-    usuario: Usuario = Depends(obtener_usuario_actual),
-    db: AsyncSession = Depends(get_db),
-):
-    for campo, valor in datos.model_dump(exclude_unset=True).items():
+async def actualizar_mi_perfil(datos: PerfilActualizar, usuario: Usuario = Depends(obtener_usuario_actual),
+                               db: AsyncSession = Depends(get_db)):
+    cambios = datos.model_dump(exclude_unset=True)
+    if cambios.get("ciudad_id") is not None and await db.get(Ciudad, cambios["ciudad_id"]) is None:
+        raise HTTPException(status_code=400, detail="La ciudad no existe")
+    for campo, valor in cambios.items():
         if campo == "nombre" and valor is None:
             continue
         setattr(usuario, campo, valor)

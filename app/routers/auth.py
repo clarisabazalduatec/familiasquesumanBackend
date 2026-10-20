@@ -8,6 +8,7 @@ from app.models import Usuario
 from app.schemas import UsuarioCrear, UsuarioLogin, TokenRespuesta
 from app.security import hashear_password, verificar_password, crear_access_token
 from app.metrics import AUTH_EVENTS
+from app.routers._comun import _ciudad_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -23,7 +24,7 @@ async def registrar_usuario(datos: UsuarioCrear, db: AsyncSession = Depends(get_
         nombre=datos.nombre,
         email=datos.email,
         password_hash=hashear_password(datos.password),
-        ubicacion=datos.ubicacion,
+        ciudad_id=await _ciudad_id(db, datos.ciudad_id),
     )
     db.add(usuario)
     await db.commit()
