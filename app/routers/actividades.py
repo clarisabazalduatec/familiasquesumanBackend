@@ -67,6 +67,135 @@ async def listar_actividades_admin(
     return (await db.execute(stmt)).scalars().all()
 
 
+def _celda_csv(valor) -> str:
+    """Evita CSV/formula injection: Excel ejecuta celdas que empiezan con = + - @ (ej. un nombre
+    "=HYPERLINK(...)"). Con un apóstrofo delante se muestran como texto."""
+    texto = "" if valor is None else str(valor)
+    if len(texto) > 1 and texto[0] in ("=", "+", "-", "@", "\t", "\r", "|", "%"):
+        return "'" + texto
+    return texto
+
+
+@router.get("/encuestas/exportar")
+async def exportar_todas_encuestas_csv(
+    _admin: Usuario = Depends(requiere_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Genera y descarga un archivo CSV con TODAS las encuestas registradas."""
+    
+    # 1. Cargar Usuarios en memoria de forma segura
+    mapa_usuarios = {}
+    try:
+        res_u = await db.execute(select(Usuario))
+        mapa_usuarios = {u.id: u.nombre for u in res_u.scalars().all()}
+    except Exception:
+        await db.rollback()
+
+    # 2. Cargar Actividades en memoria
+    mapa_actividades = {}
+    try:
+        res_a = await db.execute(select(Actividad))
+        for a in res_a.scalars().all():
+            act_id = getattr(a, "id", None) or getattr(a, "iniciativa_id", None)
+            mapa_actividades[act_id] = getattr(a, "titulo", "Sin título")
+    except Exception:
+        await db.rollback()
+
+    # 3. Consultar Encuestas
+    encuestas_iniciales, encuestas_finales = [], []
+    try:
+        res_inic = await db.execute(select(EncuestaInicialActividad))
+        encuestas_iniciales = res_inic.scalars().all()
+    except Exception:
+        await db.rollback()
+
+    try:
+        res_fin = await db.execute(select(EncuestaActividad))
+        encuestas_finales = res_fin.scalars().all()
+    except Exception:
+        await db.rollback()
+
+    registros = []
+
+    # 4. Procesar Encuestas Iniciales
+    for enc in encuestas_iniciales:
+        nombre_u = mapa_usuarios.get(getattr(enc, "usuario_id", None), "Usuario Desconocido")
+        titulo_a = mapa_actividades.get(getattr(enc, "actividad_id", None), "Actividad Desconocida")
+
+        motivos = getattr(enc, "motivos", None)
+        motivos_str = ", ".join(str(m) for m in motivos if m) if isinstance(motivos, list) else (str(motivos) if motivos else "")
+
+        expectativas = getattr(enc, "expectativas", None)
+        exp_str = ", ".join(str(e) for e in expectativas if e) if isinstance(expectativas, list) else (str(expectativas) if expectativas else "")
+
+        creado_en = getattr(enc, "creado_en", None)
+        fecha_str = creado_en.strftime("%Y-%m-%d %H:%M:%S") if isinstance(creado_en, datetime) else ""
+
+        registros.append({
+            "fecha": creado_en,
+            "row": [
+                "Inicial", titulo_a, nombre_u,
+                motivos_str, getattr(enc, "otro_motivo", "") or "",
+                exp_str, getattr(enc, "otra_expectativa", "") or "",
+                "-", "-", "-", "-", fecha_str
+            ]
+        })
+
+    # 5. Procesar Encuestas Finales
+    for enc in encuestas_finales:
+        nombre_u = mapa_usuarios.get(getattr(enc, "usuario_id", None), "Usuario Desconocido")
+        titulo_a = mapa_actividades.get(getattr(enc, "actividad_id", None), "Actividad Desconocida")
+
+        creado_en = getattr(enc, "creado_en", None)
+        fecha_str = creado_en.strftime("%Y-%m-%d %H:%M:%S") if isinstance(creado_en, datetime) else ""
+
+        registros.append({
+            "fecha": creado_en,
+            "row": [
+                "Final", titulo_a, nombre_u,
+                "-", "-", "-", "-",
+                str(getattr(enc, "experiencia_general", "-")),
+                str(getattr(enc, "utilidad_valor", "-")),
+                str(getattr(enc, "facilidad_participacion", "-")),
+                getattr(enc, "comentarios", "") or "Sin comentarios",
+                fecha_str
+            ]
+        })
+
+    # 6. Ordenamiento infalible (evita choque entre fechas con y sin zona horaria)
+    def obtener_timestamp(dt):
+        try:
+            return dt.timestamp() if isinstance(dt, datetime) else 0.0
+        except Exception:
+            return 0.0
+
+    registros.sort(key=lambda x: obtener_timestamp(x["fecha"]), reverse=True)
+
+    # 7. Escribir CSV
+    output = io.StringIO()
+    output.write('\ufeff')  # BOM UTF-8
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Tipo Encuesta", "Actividad", "Nombre del Participante", 
+        "Motivos (Inicial)", "Otro Motivo (Inicial)", 
+        "Expectativas (Inicial)", "Otra Expectativa (Inicial)", 
+        "Experiencia General (1-5)", "Utilidad y Valor (1-5)", 
+        "Facilidad (1-5)", "Comentarios (Final)", "Fecha"
+    ])
+
+    for item in registros:
+        # Actividad, nombre, motivos y comentarios los escribe el usuario: se neutralizan
+        writer.writerow([_celda_csv(v) for v in item["row"]])
+
+    # Enviar respuesta dejando que FastAPI calcule los bytes y headers
+    return Response(
+        content=output.getvalue().encode("utf-8"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=reporte_general_encuestas.csv"}
+    )
+
+
 @router.get("/admin/{actividad_id}", response_model=ActividadAdmin)
 async def detalle_actividad_admin(
     actividad_id: uuid.UUID,
@@ -339,59 +468,3 @@ async def estado_encuestas_usuario(
         "encuesta_inicial_respondida": respondio_inicial,
         "encuesta_final_respondida": respondio_final
     }
-
-
-def _celda_csv(valor) -> str:
-    """Evita CSV/formula injection: Excel ejecuta celdas que empiezan con = + - @ (ej. un nombre
-    "=HYPERLINK(...)"). Con un apóstrofo delante se muestran como texto."""
-    texto = "" if valor is None else str(valor)
-    if texto[:1] in ("=", "+", "-", "@", "\t", "\r", "|", "%"):
-        return "'" + texto
-    return texto
-
-
-@router.get("/encuestas/exportar")
-async def exportar_todas_encuestas_csv(
-    _admin: Usuario = Depends(requiere_admin),
-    db: AsyncSession = Depends(get_db)
-):
-    """Genera y descarga un archivo CSV con TODAS las encuestas registradas."""
-    
-    stmt = (
-        select(EncuestaActividad, Usuario.nombre, Actividad.titulo)
-        .join(Usuario, EncuestaActividad.usuario_id == Usuario.id)
-        .join(Actividad, EncuestaActividad.actividad_id == Actividad.id)
-        .order_by(EncuestaActividad.creado_en.desc())
-    )
-    resultados = await db.execute(stmt)
-    encuestas = resultados.all()
-    
-    if not encuestas:
-        raise HTTPException(status_code=404, detail="No hay encuestas registradas en el sistema")
-
-    output = io.StringIO()
-    output.write('\ufeff')
-    writer = csv.writer(output)
-    
-    writer.writerow([
-        "ID Encuesta", "Actividad", "Nombre del Participante", 
-        "Experiencia General (1-5)", "Utilidad y Valor (1-5)", 
-        "Facilidad (1-5)", "Comentarios", "Fecha"
-    ])
-    
-    for enc, nombre_usuario, titulo_actividad in encuestas:
-        writer.writerow([
-            enc.id,
-            _celda_csv(titulo_actividad),
-            _celda_csv(nombre_usuario),
-            enc.experiencia_general,
-            enc.utilidad_valor,
-            enc.facilidad_participacion,
-            _celda_csv(enc.comentarios) if enc.comentarios else "Sin comentarios",
-            enc.creado_en.strftime("%Y-%m-%d %H:%M:%S") if enc.creado_en else ""
-        ])
-    
-    response = Response(content=output.getvalue(), media_type="text/csv")
-    response.charset = "utf-8"
-    response.headers["Content-Disposition"] = "attachment; filename=reporte_general_encuestas.csv"
-    return response
