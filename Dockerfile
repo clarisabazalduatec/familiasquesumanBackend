@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # Sin .pyc en el contenedor y logs sin buffer
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
