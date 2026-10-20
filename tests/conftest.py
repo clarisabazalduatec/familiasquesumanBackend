@@ -28,7 +28,9 @@ from app.models import Ciudad
 
 # ---------- URL de la base de pruebas ----------
 _url_real = make_url(settings.database_url)
-URL_PRUEBAS = make_url(os.getenv("TEST_DATABASE_URL") or str(_url_real.set(database="familias_test")))
+# Ojo: str(url) esconde la contraseña ("***"); por eso se trabaja con el objeto URL directo
+URL_PRUEBAS = make_url(os.environ["TEST_DATABASE_URL"]) if os.getenv("TEST_DATABASE_URL") \
+    else _url_real.set(database="familias_test")
 URL_PRUEBAS_SYNC = URL_PRUEBAS.set(drivername="postgresql+psycopg2")
 
 if URL_PRUEBAS.database == _url_real.database:
