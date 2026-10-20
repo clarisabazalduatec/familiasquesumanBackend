@@ -37,6 +37,7 @@ from app.schemas_inscripciones import (
 
 from app.notificaciones_servicio import notificar_admins, notificar_inscripcion
 from app.security import obtener_usuario_actual, requiere_admin
+from app.verificacion_correo import requiere_correo_verificado
 
 router = APIRouter(tags=["inscripciones"])
 
@@ -152,7 +153,7 @@ async def _recargar(db: AsyncSession, inscripcion_id: uuid.UUID) -> InscripcionA
 async def inscribirse(
     actividad_id: uuid.UUID,
     datos: InscripcionGuardar,
-    usuario: Usuario = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(requiere_correo_verificado),  # correo verificado
     db: AsyncSession = Depends(get_db),
 ):
     familia_id = _familia_de(usuario)

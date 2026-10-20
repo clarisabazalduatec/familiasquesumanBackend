@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,8 @@ from app.metrics import AUTH_EVENTS
 from app.models import Usuario
 from app.routers._comun import _ciudad_id
 from app.schemas import TokenRespuesta, UsuarioCrear, UsuarioLogin
+from app.schemas_familia import PerfilOut
+from app import verificacion_correo
 from app.security import (
     HASH_FALSO, crear_access_token, hashear_password, obtener_usuario_actual, verificar_password,
 )
@@ -83,8 +86,46 @@ async def registrar_usuario(request: Request, datos: UsuarioCrear, db: AsyncSess
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo")
     await db.refresh(usuario)
 
+    # Código de verificación al correo. Si el correo falla, la cuenta igual se crea:
+    # la persona puede pedir otro código desde la app ("Reenviar código").
+    try:
+        await verificacion_correo.enviar_codigo(db, usuario, respetar_espera=False)
+    except HTTPException:
+        pass
+
     AUTH_EVENTS.labels("register", "success").inc()
     return TokenRespuesta(access_token=crear_access_token(usuario), usuario=usuario)
+
+
+# ---------- Verificación del correo (después de registrarse) ----------
+class CodigoVerificacion(BaseModel):
+    codigo: str = Field(pattern=r"^[0-9]{6}$")
+
+
+@router.post("/verificacion/enviar")
+@limiter.limit("10/minute")
+async def enviar_codigo_verificacion(
+    request: Request,
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manda (o vuelve a mandar) el código de 6 dígitos al correo de la cuenta."""
+    await verificacion_correo.enviar_codigo(db, usuario)
+    return {"mensaje": f"Te enviamos un código a {usuario.email}", "expira_en_minutos": 10}
+
+
+@router.post("/verificacion/confirmar", response_model=PerfilOut)
+@limiter.limit("10/minute")
+async def confirmar_codigo_verificacion(
+    request: Request,
+    datos: CodigoVerificacion,
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db),
+):
+    """Con el código correcto, la cuenta queda verificada. Regresa el perfil actualizado."""
+    await verificacion_correo.confirmar_codigo(db, usuario, datos.codigo)
+    await db.refresh(usuario)
+    return usuario
 
 
 @router.post("/login", response_model=TokenRespuesta)

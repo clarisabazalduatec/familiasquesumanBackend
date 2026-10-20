@@ -75,6 +75,7 @@ class UsuarioRespuesta(BaseModel):
     ciudad: CiudadOut | None = None
     rol: RolUsuario = RolUsuario.USUARIO
     foto_url: str | None = None
+    correo_verificado: bool = False
 
     @field_validator("foto_url")
     @classmethod

@@ -37,8 +37,10 @@ def auth(usuario: Usuario) -> dict:
 async def crear_usuario(
     db: AsyncSession, nombre: str = "Usuario Prueba", *, admin: bool = False,
     ciudad_id: int | None = MONTERREY, familia: Familia | None = None, email: str | None = None,
+    verificado: bool = True,
 ) -> Usuario:
     u = Usuario(
+        correo_verificado=verificado,
         nombre=nombre,
         email=email or f"u{uuid.uuid4().hex[:10]}@pruebas.mx",
         password_hash=hashear_password(PASSWORD),
@@ -65,7 +67,7 @@ async def crear_familia(
         u = Usuario(
             nombre=f"Adulto {i + 1} {nombre}", email=f"a{uuid.uuid4().hex[:10]}@pruebas.mx",
             password_hash=hashear_password(PASSWORD), rol=RolUsuario.USUARIO,
-            ciudad_id=MONTERREY, familia_id=familia.id,
+            ciudad_id=MONTERREY, familia_id=familia.id, correo_verificado=True,
         )
         db.add(u)
         lista_adultos.append(u)

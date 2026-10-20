@@ -30,6 +30,7 @@ class PerfilOut(_ConFoto):
     rol: RolUsuario
     parentesco: Parentesco | None = None
     familia_id: uuid.UUID | None = None
+    correo_verificado: bool = False
 
 
 class PerfilActualizar(BaseModel):
