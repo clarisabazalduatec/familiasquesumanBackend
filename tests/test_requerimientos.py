@@ -231,6 +231,18 @@ async def test_rf17_cancelar_sube_la_lista_de_espera(cliente, db):
     assert r["estado"] == "CONFIRMADA"
 
 
+# RF-17 Cancelación: con lugar confirmado, no se puede cancelar a menos de 24 h
+async def test_rf17_no_cancela_con_menos_de_24_horas(cliente, db):
+    actividad = await crear_actividad(db, inicia_en=en_horas(5))
+    _, fam, _ = await crear_familia(db)
+    await inscribir(cliente, actividad, fam)
+
+    r = await cliente.delete(f"/actividades/{actividad.id}/inscripcion", headers=auth(fam[0]))
+
+    assert r.status_code == 409 and "24 horas" in r.json()["detail"]
+    assert (await cliente.get(f"/actividades/{actividad.id}/inscripcion", headers=auth(fam[0]))).json()["estado"] == "CONFIRMADA"
+
+
 # RF-18 Comunidad: moderación antes de publicar y avisos oficiales solo del admin
 async def test_rf18_moderacion_y_avisos_solo_admin(cliente, db):
     admin, yo = await crear_usuario(db, "Admin", admin=True), await crear_usuario(db)

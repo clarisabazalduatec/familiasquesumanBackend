@@ -1,6 +1,6 @@
 """Reglas de cupo compartidas por los routers de inscripciones, actividades y familias."""
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,10 @@ from app.models import (
 from app.notificaciones_servicio import notificar
 
 ESTADOS_ACTIVOS = (EstadoInscripcion.CONFIRMADA, EstadoInscripcion.EN_ESPERA)
+
+# RF-17: una inscripción CONFIRMADA solo se cancela con al menos 24 h de anticipación,
+# así el lugar liberado le da tiempo a la familia de la lista de espera.
+ANTICIPACION_CANCELAR = timedelta(hours=24)
 
 def ahora() -> datetime:
     return datetime.now(timezone.utc)

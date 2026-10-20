@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.inscripciones_servicio import ESTADOS_ACTIVOS, ahora, bloquear_actividad, contar_ocupados, promover_lista_espera
+from app.inscripciones_servicio import ANTICIPACION_CANCELAR, ESTADOS_ACTIVOS, ahora, bloquear_actividad, contar_ocupados, promover_lista_espera
 from app.models import (
     Actividad,
     EstadoInscripcion,
@@ -272,6 +272,15 @@ async def cancelar_inscripcion(
         raise HTTPException(status_code=404, detail="Tu familia no está inscrita en esta actividad")
     if inscripcion.actividad.inicia_en <= ahora():
         raise HTTPException(status_code=409, detail="La actividad ya comenzó; ya no se puede cancelar")
+    # RF-17: con lugar confirmado, solo hasta 24 h antes. Salir de la lista de espera se puede
+    # siempre (no libera ningún lugar). El admin sí puede cancelar en cualquier momento.
+    if (inscripcion.estado == EstadoInscripcion.CONFIRMADA
+            and inscripcion.actividad.inicia_en - ahora() < ANTICIPACION_CANCELAR):
+        raise HTTPException(
+            status_code=409,
+            detail="Solo puedes cancelar hasta 24 horas antes de la actividad. "
+                   "Si no puedes asistir, contacta a Familias que Suman.",
+        )
 
     inscripcion.estado = EstadoInscripcion.CANCELADA
     inscripcion.cancelada_en = ahora()
