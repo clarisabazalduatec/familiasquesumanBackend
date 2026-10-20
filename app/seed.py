@@ -207,7 +207,7 @@ def sembrar(db: Session) -> None:
             titulo="Suma a su Mesa",
             descripcion_corta=("Recolección de alimentos y productos de limpieza para el Asilo de Ancianos "
                                "Morada del Anciano Desvalido de Cadereyta. Se sirven 6,900 servicios de alimentación al mes."),
-            ubicacion="Monterrey, N.L.", ciudad=mty, organizacion=org["sanjose"],
+            ubicacion="Monterrey, N.L.", ciudad=mty, organizacion=org["fqs"],
             modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Alimentos"],
             meta=Decimal("100"), recaudado=Decimal("25"), whatsapp="8114707350",
             fecha_limite=datetime(2026, 10, 30),
@@ -234,8 +234,8 @@ def sembrar(db: Session) -> None:
             titulo="Acompañamiento a Adultos Mayores",
             descripcion_corta=("Asociación civil con 81 años de labor que brinda atención integral y permanente "
                                "a 104 adultos mayores en situación vulnerable."),
-            ubicacion="Hidalgo Sur #637, Zona Centro, Saltillo / Monterrey", ciudad=mty, organizacion=org["fqs"],
-            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Salud"],
+            ubicacion="Hidalgo Sur #637, Zona Centro, Saltillo / Monterrey", ciudad=mty, organizacion=org["sanjose"],
+            modalidad=ModalidadDonacion.TIEMPO, categoria=c_don["Salud"],
             meta=Decimal("30"), recaudado=Decimal("12"), whatsapp="8110809078",
             fecha_limite=datetime(2026, 11, 30), horario="Sábados de 10:00 AM a 1:00 PM",
             descripcion_larga=(
