@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Response, UploadFile, File
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Response, UploadFile, File
+from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import AmbitoCategoria
 
@@ -22,8 +22,9 @@ from app.models import (
     Usuario,
     Comentario,
 )
-from app.routers._comun import Paginacion, _ciudad_id
-from app.models import DestinoNotificacion, TipoNotificacion
+from app.limites import SUBIDAS, limiter, usuario_o_ip
+from app.routers._comun import Paginacion, _borrar_objetos, _ciudad_id, _claves_validas
+from app.models import DestinoNotificacion, Notificacion, TipoNotificacion
 from app.notificaciones_servicio import (
     nombre_publicacion, notificar, notificar_admins, notificar_like, notificar_usuarios,
 )
@@ -43,31 +44,21 @@ router = APIRouter(prefix="/comunidad", tags=["comunidad"])
     response_model=ImagenSubida,
     status_code=status.HTTP_201_CREATED
 )
+@limiter.limit(SUBIDAS, key_func=usuario_o_ip)
 async def subir_imagen_comunidad(
+    request: Request,
     archivo: UploadFile,
     usuario: Usuario = Depends(obtener_usuario_actual)
 ):
     clave = await guardar_imagen_subida(archivo)
     return ImagenSubida( clave=clave, url=f"/imagenes/{clave}")
 
-async def _validar_imagenes(urls: list[str]) -> list[str]:
-    """Valida imágenes con el almacén existente del proyecto."""
-    claves = []
-    for url in urls:
-        clave = almacen.clave_de(url)
-        if not clave:
-            raise HTTPException(
-                status_code=422,
-                detail="La imagen no es válida"
-            )
-        if not clave.startswith(("http", "/media/")):
-            if not almacen.CLAVE_RE.match(clave) or not await almacen.existe(clave):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"La imagen {clave} no existe en el almacén"
-                )
-        claves.append(clave)
-    return claves
+async def _validar_imagenes(urls: list[str], permitir_externas: bool = False) -> list[str]:
+    """Publicaciones de usuarios: solo fotos subidas al almacén (nada de URLs externas, que
+    sirven para rastrear a quien abre la publicación o meter contenido sin moderar).
+    Los avisos oficiales (admin) sí pueden usar enlaces https."""
+    return await _claves_validas(urls, permitir_externas=permitir_externas)
+
 
 
 ## publicaciones de comunidad
@@ -106,18 +97,20 @@ async def listar_publicaciones(
 
 @router.post(
     "",response_model=PublicacionResumen,status_code=status.HTTP_201_CREATED,)
+@limiter.limit("10/minute", key_func=usuario_o_ip)
 async def crear_publicacion(
+    request: Request,
     datos: PublicacionCrear,
     usuario: Usuario = Depends(obtener_usuario_actual),
     db: AsyncSession = Depends(get_db),
 ):
-    
+    # La categoría es opcional; antes, sin categoría, `categoria` quedaba sin definir (500)
     if datos.categoria_id is not None:
         categoria = await db.get(Categoria, datos.categoria_id)
-    if categoria is None:
-        raise HTTPException(status_code=400,detail="La categoría no existe")
-    if categoria.ambito != AmbitoCategoria.PUBLICACION:
-        raise HTTPException(  status_code=400, detail="La categoría debe pertenecer al ámbito PUBLICACION" )
+        if categoria is None:
+            raise HTTPException(status_code=400, detail="La categoría no existe")
+        if categoria.ambito != AmbitoCategoria.PUBLICACION:
+            raise HTTPException(status_code=400, detail="La categoría debe pertenecer al ámbito PUBLICACION")
     claves = await _validar_imagenes(datos.imagenes)
     publicacion = Publicacion(
         tipo=TipoPublicacion.COMUNIDAD,
@@ -323,7 +316,7 @@ async def crear_aviso_oficial(
             status_code=422,
             detail="La fecha de fin no puede ser anterior al inicio"
         )
-    claves = await _validar_imagenes(datos.imagenes)
+    claves = await _validar_imagenes(datos.imagenes, permitir_externas=True)  # admin
     ahora = datetime.now(timezone.utc)
     aviso = Publicacion(
         tipo=TipoPublicacion.OFICIAL,
@@ -489,7 +482,9 @@ async def consultar_likes_publicacion(
 ##comentarios (comunidad)
 @router.post(
     "/{publicacion_id}/comentarios",response_model=ComentarioRespuesta,status_code=status.HTTP_201_CREATED,)
+@limiter.limit("20/minute", key_func=usuario_o_ip)
 async def crear_comentario(
+    request: Request,
     publicacion_id: uuid.UUID,
     datos: ComentarioCrear,
     usuario: Usuario = Depends(obtener_usuario_actual),
@@ -640,5 +635,53 @@ async def detalle_publicacion(
     return respuesta
 
 
+## eliminar publicación (dueño o admin)
+@router.delete(
+    "/{publicacion_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def eliminar_publicacion(
+    request: Request,
+    publicacion_id: uuid.UUID,
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db),
+):
+    """Borra la publicación con sus imágenes, comentarios y likes.
 
+    - Admin: puede borrar cualquiera (comunidad u oficial, en cualquier estado).
+    - Dueño: solo sus publicaciones de COMUNIDAD, en cualquier estado.
+    """
+    publicacion = await db.get(Publicacion, publicacion_id)
+    if publicacion is None:
+        raise HTTPException(status_code=404, detail="Publicación no encontrada")
 
+    es_admin = usuario.rol == RolUsuario.ADMIN
+    es_dueno = publicacion.autor_id == usuario.id and publicacion.tipo == TipoPublicacion.COMUNIDAD
+    if not (es_admin or es_dueno):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo el autor o un administrador pueden eliminar esta publicación",
+        )
+    if es_admin and not es_dueno:
+        request.state.es_admin = True  # que la bitácora registre que un admin borró contenido ajeno
+
+    claves = [i.url for i in publicacion.imagenes]
+    documento = almacen.clave_de(publicacion.documento_url)
+    if documento:
+        claves.append(documento)
+
+    # Las notificaciones guardan el id como texto (sin llave foránea): se borran a mano
+    await db.execute(
+        delete(Notificacion).where(
+            Notificacion.destino_tipo.in_([
+                DestinoNotificacion.PUBLICACION.value,
+                DestinoNotificacion.AVISO.value,
+                DestinoNotificacion.MODERACION.value,
+            ]),
+            Notificacion.destino_id == str(publicacion_id),
+        )
+    )
+    await db.delete(publicacion)  # cascade: imágenes, comentarios (y sus likes), likes
+    await db.commit()
+    await _borrar_objetos(claves)  # después del commit: a lo mucho queda un archivo huérfano
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,6 +11,10 @@ from app.models.catalogo import Ciudad
 
 class Usuario(Base):
     __tablename__ = "usuarios"
+    __table_args__ = (
+        # Un correo = una cuenta, sin importar mayúsculas (Ana@x.mx == ana@x.mx)
+        Index("uq_usuarios_email_lower", text("lower(email)"), unique=True),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nombre: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -36,6 +40,13 @@ class Usuario(Base):
         ForeignKey("familias.id", ondelete="SET NULL"), index=True
     )
     parentesco: Mapped[Parentesco | None] = mapped_column(enum_col(Parentesco, "parentesco"))
+
+    # Seguridad de la sesión
+    # sesion_version va dentro del JWT ("ver"); subirla invalida TODOS los tokens del usuario
+    # (cerrar sesión en todos lados, cambio de contraseña).
+    sesion_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    intentos_fallidos: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    bloqueado_hasta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     familia: Mapped["Familia | None"] = relationship(back_populates="adultos")
     mensajes: Mapped[list["MensajeChat"]] = relationship(back_populates="usuario")

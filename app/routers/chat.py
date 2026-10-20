@@ -1,10 +1,12 @@
 import asyncio
+import hashlib
+import hmac
 import logging
 import os
 import warnings
 from time import perf_counter
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from google import genai
 from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,7 @@ from app.database import get_db
 from app.metrics import CHATBOT_REQUEST_DURATION, CHATBOT_REQUESTS
 from app.models import Usuario
 from app.schemas import ChatEnlace, ChatMensajeEntrada, ChatMensajeRespuesta
+from app.limites import CHAT, limiter, usuario_o_ip
 from app.security import obtener_usuario_opcional
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -92,7 +95,9 @@ async def responder(chat, mensaje: str, db: AsyncSession, usuario: Usuario | Non
         partes = []
         for llamada in llamadas:
             args = dict(llamada.args or {})
-            log.info("chatbot herramienta=%s args=%s", llamada.name, args)
+            # Los args los genera el modelo a partir del texto del usuario: solo se registran
+            # las llaves (no los valores) para no guardar datos personales en el log.
+            log.info("chatbot herramienta=%s args=%s", llamada.name, sorted(args))
             try:
                 resultado = await herramientas.ejecutar(llamada.name, args, db, usuario)
             except Exception:
@@ -108,8 +113,25 @@ async def responder(chat, mensaje: str, db: AsyncSession, usuario: Usuario | Non
     return texto, _enlaces_mencionados(texto, candidatos)
 
 
+def firmar_respuesta(texto: str) -> str:
+    """HMAC de la respuesta del asistente. La app la regresa en el historial; si el texto
+    cambió (o lo inventó el cliente), la firma no coincide y ese turno se descarta."""
+    llave = hashlib.sha256(f"chat:{settings.jwt_secret_key}".encode()).digest()
+    return hmac.new(llave, texto.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _turno_confiable(t) -> bool:
+    if t.rol == "usuario":
+        return True
+    if not settings.chat_exigir_firma:
+        return True
+    return bool(t.firma) and hmac.compare_digest(t.firma, firmar_respuesta(t.contenido))
+
+
 @router.post("", response_model=ChatMensajeRespuesta)
+@limiter.limit(CHAT, key_func=usuario_o_ip)
 async def enviar_mensaje(
+    request: Request,
     entrada: ChatMensajeEntrada,
     usuario: Usuario | None = Depends(obtener_usuario_opcional),
     db: AsyncSession = Depends(get_db),
@@ -128,7 +150,7 @@ async def enviar_mensaje(
             parts=[types.Part.from_text(text=t.contenido)],
         )
         for t in entrada.historial[-MAX_HISTORIAL:]
-        if t.contenido.strip()
+        if t.contenido.strip() and _turno_confiable(t)  # turnos "asistente" falsos se descartan
     ]
 
     # La configuración se arma por mensaje: las instrucciones llevan la fecha y si hay sesión.
@@ -159,5 +181,7 @@ async def enviar_mensaje(
         CHATBOT_REQUEST_DURATION.observe(perf_counter() - inicio)
 
     if not texto_respuesta:
-        return ChatMensajeRespuesta(respuesta=RESPUESTA_FALLA)
-    return ChatMensajeRespuesta(respuesta=texto_respuesta, enlaces=enlaces)
+        return ChatMensajeRespuesta(respuesta=RESPUESTA_FALLA, firma=firmar_respuesta(RESPUESTA_FALLA))
+    return ChatMensajeRespuesta(
+        respuesta=texto_respuesta, enlaces=enlaces, firma=firmar_respuesta(texto_respuesta)
+    )

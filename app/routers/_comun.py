@@ -1,5 +1,6 @@
 import uuid
 from typing import TypeVar
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Query
 from sqlalchemy import select
@@ -34,15 +35,29 @@ async def obtener_o_404(db: AsyncSession, modelo: type[T], id: uuid.UUID, nombre
         raise HTTPException(status_code=404, detail=f"{nombre} no encontrada")
     return obj
 
-async def _claves_validas(urls: list[str | None]) -> list[str]:
+def _es_url_externa_valida(c: str) -> bool:
+    """Solo https://host/... (antes bastaba con empezar con "http", y "httpxyz" pasaba sin validar)."""
+    partes = urlsplit(c)
+    return partes.scheme == "https" and bool(partes.netloc) and not any(ch.isspace() for ch in c)
+
+
+async def _claves_validas(urls: list[str | None], permitir_externas: bool = True) -> list[str]:
+    """Normaliza y valida imágenes. Las del almacén deben existir; las externas solo se aceptan
+    con https (y solo donde permitir_externas=True, es decir, contenido que sube un admin)."""
     claves: list[str] = []
     for u in urls:
         c = almacen.clave_de(u)
         if not c:
             continue
-        if not c.startswith(("http", "/media/")):
-            if not almacen.CLAVE_RE.match(c) or not await almacen.existe(c):
-                raise HTTPException(status_code=422, detail=f"La imagen {c} no existe en el almacén")
+        if c.startswith("/media/") and ".." not in c:
+            pass  # imágenes anteriores al almacén
+        elif almacen.CLAVE_RE.match(c):
+            if not await almacen.existe(c):
+                raise HTTPException(status_code=422, detail="Una de las imágenes no existe en el almacén")
+        elif permitir_externas and _es_url_externa_valida(c):
+            pass
+        else:
+            raise HTTPException(status_code=422, detail="Imagen no válida: sube la foto desde la app")
         claves.append(c)
     return claves
 

@@ -30,3 +30,8 @@ CHATBOT_REQUEST_DURATION = Histogram(
     "chatbot_request_duration_seconds",
     "Gemini chatbot request duration in seconds.",
 )
+RATE_LIMITED = Counter(
+    "rate_limited_total",
+    "Requests rejected with 429 by the rate limiter.",
+    ("route",),
+)

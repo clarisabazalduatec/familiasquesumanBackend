@@ -309,7 +309,8 @@ async def mi_cuenta(db: AsyncSession, usuario: Usuario | None) -> dict:
             datos["familia"] = _limpio({
                 "nombre": familia.nombre,
                 "adultos": [_limpio({"nombre": n, "parentesco": p.value.lower() if p else None}) for n, p in adultos],
-                "menores": [{"nombre": m.nombre, "edad": _edad(m.fecha_nacimiento)} for m in menores],
+                # Solo la edad: los nombres de menores no se mandan a un tercero (Gemini)
+                "menores": [{"edad": _edad(m.fecha_nacimiento)} for m in menores],
             })
     else:
         datos["familia"] = "Todavía no pertenece a ninguna familia (puede crearla desde su Perfil)."

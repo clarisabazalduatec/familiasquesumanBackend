@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16
+    image: postgres:16.10
     restart: unless-stopped
     environment:
       POSTGRES_USER: familias_user
@@ -54,10 +54,10 @@ services:
       - ./pytest.ini:/code/pytest.ini
       - ./requirements-dev.txt:/code/requirements-dev.txt
       - media_data:/code/media 
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips=*"
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.9.3
     restart: unless-stopped
     command: tunnel --no-autoupdate --protocol http2 --metrics 0.0.0.0:2000 --url http://api:8000
     depends_on:

@@ -9,7 +9,7 @@ Reglas:
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 
 from app.database import get_db
+from app.limites import INVITACIONES, limiter, usuario_o_ip
 from app.models import EstadoInvitacion, Familia, FamiliaMenor, InvitacionFamilia, Usuario
 from app.schemas_familia import (
     FamiliaActualizar,
@@ -215,7 +216,9 @@ async def borrar_menor(
 
 # ---------- invitaciones enviadas ----------
 @router.post("/mia/invitaciones", response_model=InvitacionEnviadaOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit(INVITACIONES, key_func=usuario_o_ip)
 async def invitar_adulto(
+    request: Request,
     datos: InvitacionCrear,
     usuario: Usuario = Depends(obtener_usuario_actual),
     db: AsyncSession = Depends(get_db),

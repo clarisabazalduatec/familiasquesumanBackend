@@ -9,9 +9,11 @@ import logging
 import threading
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 from starlette.concurrency import run_in_threadpool
+
+from app.limites import CONTACTO, limiter
 
 router = APIRouter(prefix="/contacto", tags=["Contacto"])
 logger = logging.getLogger(__name__)
@@ -93,11 +95,21 @@ def enviar_correo(datos: MensajeContacto):
     )
 
 
+def _purgar(ahora) -> None:
+    """Los diccionarios viven en memoria: sin esto crecen para siempre (un correo nuevo por intento)."""
+    for c in [c for c, v in verificaciones.items() if ahora >= v["expira"]]:
+        verificaciones.pop(c, None)
+    for c in [c for c, fechas in solicitudes.items() if all(ahora - f >= timedelta(hours=1) for f in fechas)]:
+        solicitudes.pop(c, None)
+
+
 @router.post("/solicitar-codigo")
-async def solicitar_codigo(datos: MensajeContacto):
+@limiter.limit(CONTACTO)  # por IP: antes solo había límite por correo, y rotando correos se abusaba del SMTP
+async def solicitar_codigo(request: Request, datos: MensajeContacto):
     correo = str(datos.correo).strip().lower()
     ahora = fecha_actual()
     with bloqueo:
+        _purgar(ahora)
         historial = [
             fecha for fecha in solicitudes.get(correo, [])
             if ahora - fecha < timedelta(hours=1)
@@ -144,7 +156,8 @@ async def solicitar_codigo(datos: MensajeContacto):
 
 
 @router.post("/confirmar-codigo")
-async def confirmar_codigo(datos: ConfirmarCodigo):
+@limiter.limit("20/hour")
+async def confirmar_codigo(request: Request, datos: ConfirmarCodigo):
     correo = str(datos.correo).strip().lower()
     ahora = fecha_actual()
     with bloqueo:

@@ -139,3 +139,12 @@ async def ciudades(db):
 
 def nuevo_email() -> str:
     return f"u{uuid.uuid4().hex[:10]}@pruebas.mx"
+
+
+@pytest.fixture(autouse=True)
+def sin_rate_limit_acumulado():
+    """El rate limit vive en memoria y duraría entre pruebas: se reinicia en cada una
+    (así ninguna prueba recibe un 429 por culpa de las anteriores)."""
+    from app.limites import limiter
+    limiter.reset()
+    yield

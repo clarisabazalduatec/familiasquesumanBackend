@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import EstadoAsistencia, EstadoInscripcion
 from app.schemas_catalogo import ActividadResumen
@@ -95,10 +95,23 @@ class InsigniaOut(BaseModel):
 
 # --------- Encuesta inicial (pre-actividad) ----------
 class EncuestaInicialCreate(BaseModel):
-    motivos: List[str] = Field(default_factory=list)
-    otro_motivo: Optional[str] = None
-    expectativas: List[str] = Field(default_factory=list)
-    otra_expectativa: Optional[str] = None
+    motivos: List[str] = Field(default_factory=list, max_length=10)
+    otro_motivo: Optional[str] = Field(default=None, max_length=300)
+    expectativas: List[str] = Field(default_factory=list, max_length=10)
+    otra_expectativa: Optional[str] = Field(default=None, max_length=300)
+
+    @field_validator("motivos", "expectativas")
+    @classmethod
+    def _opciones_cortas(cls, v: List[str]) -> List[str]:
+        limpias = [" ".join(o.split()) for o in v if o and o.strip()]
+        if any(len(o) > 100 for o in limpias):
+            raise ValueError("Cada opción puede tener máximo 100 caracteres")
+        return list(dict.fromkeys(limpias))  # sin repetidos, conservando el orden
+
+    @field_validator("otro_motivo", "otra_expectativa", mode="before")
+    @classmethod
+    def _vacio_es_null(cls, v):
+        return (v.strip() or None) if isinstance(v, str) else v
 
 class EncuestaInicialOut(BaseModel):
     id: uuid.UUID

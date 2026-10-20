@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,7 +14,9 @@ from app.routers._comun import _borrar_objetos
 from app.routers.imagenes import guardar_imagen_subida
 from app.schemas_familia import PerfilActualizar, PerfilOut, CiudadActualizar
 from app.schemas_inscripciones import InsigniaOut
-from app.security import obtener_usuario_actual
+from app.limites import CAMBIO_PASSWORD, SUBIDAS, limiter, usuario_o_ip
+from app.schemas import CambiarPassword, TokenRespuesta
+from app.security import crear_access_token, hashear_password, obtener_usuario_actual, verificar_password
 
 router = APIRouter(prefix="/usuarios", tags=["perfil"])
 
@@ -54,10 +56,34 @@ async def cambiar_mi_ciudad(
         await db.commit()
     return usuario
 
+# ---------- Contraseña ----------
+@router.put("/me/password", response_model=TokenRespuesta)
+@limiter.limit(CAMBIO_PASSWORD, key_func=usuario_o_ip)
+async def cambiar_mi_password(
+    request: Request,
+    datos: CambiarPassword,
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cambia la contraseña y cierra la sesión en todos los demás dispositivos.
+    Regresa un token nuevo para que este celular siga dentro."""
+    if not verificar_password(datos.actual, usuario.password_hash):
+        raise HTTPException(status_code=400, detail="La contraseña actual no es correcta")
+    if verificar_password(datos.nueva, usuario.password_hash):
+        raise HTTPException(status_code=400, detail="La nueva contraseña debe ser distinta a la actual")
+    usuario.password_hash = hashear_password(datos.nueva)
+    usuario.sesion_version = (usuario.sesion_version or 0) + 1  # invalida los tokens anteriores
+    await db.commit()
+    await db.refresh(usuario)
+    return TokenRespuesta(access_token=crear_access_token(usuario), usuario=usuario)
+
+
 # ---------- Foto de perfil ----------
 
 @router.put("/me/foto", response_model=PerfilOut)
+@limiter.limit(SUBIDAS, key_func=usuario_o_ip)
 async def cambiar_mi_foto(
+    request: Request,
     archivo: UploadFile,
     usuario: Usuario = Depends(obtener_usuario_actual),
     db: AsyncSession = Depends(get_db),

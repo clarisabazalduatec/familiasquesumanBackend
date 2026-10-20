@@ -228,17 +228,22 @@ class EncuestaInicialActividad(Base):
     __tablename__ = "encuestas_iniciales_actividad"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
-    # Si la tabla en tu BD se llama 'actividades', usa "actividades.id", o "actividades.iniciativa_id" si esa es la columna
-    actividad_id = Column(UUID(as_uuid=True), nullable=False)
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    actividad_id = Column(
+        UUID(as_uuid=True), ForeignKey("actividades.iniciativa_id", ondelete="CASCADE"), nullable=False
+    )
 
     motivos = Column(JSON, nullable=False)
-    otro_motivo = Column(String, nullable=True)
+    otro_motivo = Column(String(300), nullable=True)
 
     expectativas = Column(JSON, nullable=False)
-    otra_expectativa = Column(String, nullable=True)
+    otra_expectativa = Column(String(300), nullable=True)
 
     creado_en = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "actividad_id", name="uq_encuesta_inicial_usuario_actividad"),
+    )
 
 
 class EncuestaActividad(Base):
@@ -256,3 +261,8 @@ class EncuestaActividad(Base):
     comentarios: Mapped[str | None] = mapped_column(Text)
     
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        # Una encuesta por persona y actividad (antes solo lo revisaba el código, con carrera)
+        UniqueConstraint("usuario_id", "actividad_id", name="uq_encuesta_usuario_actividad"),
+    )

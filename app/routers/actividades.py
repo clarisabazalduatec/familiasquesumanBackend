@@ -7,11 +7,12 @@ from app.models.iniciativas import EncuestaInicialActividad
 from app.schemas_inscripciones import EncuestaInicialCreate, EncuestaInicialOut
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import (
-    Actividad, AmbitoCategoria, Categoria, IniciativaImagen, Organizacion, TipoIniciativa, Usuario, EstadoInscripcion, InscripcionActividad, EncuestaActividad
+    Actividad, AmbitoCategoria, Categoria, IniciativaImagen, Organizacion, TipoIniciativa, Usuario, EstadoInscripcion, InscripcionActividad, EncuestaActividad, EstadoAsistencia
 )
 from app.routers._comun import (
     Paginacion, _borrar_objetos, _ciudad_id, _claves_validas, obtener_o_404,
@@ -199,7 +200,24 @@ async def detalle_actividad(actividad_id: uuid.UUID, db: AsyncSession = Depends(
     return await obtener_o_404(db, Actividad, actividad_id, "Actividad")
 
 
-# Encuesta inicial (pre-actividad): para que los participantes digan por qué se inscribieron y qué esperan lograr.
+# ---------- Encuestas: reglas de negocio ----------
+async def _inscripcion_de_mi_familia(
+    db: AsyncSession, usuario: Usuario, actividad_id: uuid.UUID, estados: tuple
+) -> InscripcionActividad | None:
+    """La inscripción de la familia del usuario (o hecha por él) en esa actividad."""
+    condicion = InscripcionActividad.inscrito_por_id == usuario.id
+    if usuario.familia_id is not None:
+        condicion = condicion | (InscripcionActividad.familia_id == usuario.familia_id)
+    return await db.scalar(
+        select(InscripcionActividad).where(
+            InscripcionActividad.actividad_id == actividad_id,
+            InscripcionActividad.estado.in_(estados),
+            condicion,
+        )
+    )
+
+
+# Encuesta inicial (pre-actividad): por qué se inscribieron y qué esperan lograr.
 @router.post("/{actividad_id}/encuesta-inicial", response_model=EncuestaInicialOut)
 async def enviar_encuesta_inicial(
     actividad_id: uuid.UUID,
@@ -207,49 +225,47 @@ async def enviar_encuesta_inicial(
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
     db: AsyncSession = Depends(get_db)
 ):
+    # La tabla la crea la migración (antes se hacía create_all en cada request, saltándose Alembic)
+    actividad = await db.get(Actividad, actividad_id)
+    if actividad is None or not actividad.activa:
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+
+    # Solo quien se inscribió (confirmado o en lista de espera)
+    if await _inscripcion_de_mi_familia(
+        db, usuario_actual, actividad_id, (EstadoInscripcion.CONFIRMADA, EstadoInscripcion.EN_ESPERA)
+    ) is None:
+        raise HTTPException(status_code=403, detail="Solo puedes responder la encuesta de actividades a las que te inscribiste")
+
+    existe = await db.scalar(select(EncuestaInicialActividad).where(
+        EncuestaInicialActividad.actividad_id == actividad_id,
+        EncuestaInicialActividad.usuario_id == usuario_actual.id,
+    ))
+    if existe:
+        return existe  # ya la respondió: se regresa la existente
+
+    nueva_encuesta = EncuestaInicialActividad(
+        usuario_id=usuario_actual.id,
+        actividad_id=actividad_id,
+        motivos=encuesta.motivos,
+        otro_motivo=encuesta.otro_motivo,
+        expectativas=encuesta.expectativas,
+        otra_expectativa=encuesta.otra_expectativa,
+    )
+    db.add(nueva_encuesta)
     try:
-        from app.database import Base, engine
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-        act_id_col = Actividad.id if hasattr(Actividad, "id") else getattr(Actividad, "iniciativa_id")
-        stmt_act = select(Actividad).where(act_id_col == actividad_id)
-        actividad = await db.scalar(stmt_act)
-        if not actividad:
-            raise HTTPException(status_code=404, detail="Actividad no encontrada")
-
-        stmt_e = select(EncuestaInicialActividad).where(
-            EncuestaInicialActividad.actividad_id == actividad_id,
-            EncuestaInicialActividad.usuario_id == usuario_actual.id
-        )
-        existe = await db.scalar(stmt_e)
-        
-        # Si ya la respondió, devolvemos la encuesta existente
-        if existe:
-            return existe
-
-        nueva_encuesta = EncuestaInicialActividad(
-            usuario_id=usuario_actual.id,
-            actividad_id=actividad_id,
-            motivos=encuesta.motivos,
-            otro_motivo=encuesta.otro_motivo,
-            expectativas=encuesta.expectativas,
-            otra_expectativa=encuesta.otra_expectativa
-        )
-        db.add(nueva_encuesta)
         await db.commit()
-        await db.refresh(nueva_encuesta)
-
-        return nueva_encuesta
-
-    except HTTPException:
-        raise
-    except Exception as e:
+    except IntegrityError:
+        # Dos envíos al mismo tiempo: el UNIQUE (usuario_id, actividad_id) frena al segundo
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al guardar encuesta inicial: {str(e)}")
+        return await db.scalar(select(EncuestaInicialActividad).where(
+            EncuestaInicialActividad.actividad_id == actividad_id,
+            EncuestaInicialActividad.usuario_id == usuario_actual.id,
+        ))
+    await db.refresh(nueva_encuesta)
+    return nueva_encuesta
 
 
-# Encuesta de actividad (post-actividad): para que los participantes den su opinión sobre la experiencia.
+# Encuesta de actividad (post-actividad): opinión sobre la experiencia.
 @router.post("/{actividad_id}/encuesta", response_model=EncuestaActividadOut)
 async def enviar_encuesta(
     actividad_id: uuid.UUID,
@@ -257,35 +273,43 @@ async def enviar_encuesta(
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. Validar que la actividad exista
     actividad = await db.get(Actividad, actividad_id)
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    if actividad.termina_en > datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="La encuesta se habilita cuando termina la actividad")
 
-    # 2. Verificar si ya contestó previamente
-    stmt = select(EncuestaActividad).where(
+    # Su familia tuvo que estar confirmada y alguien de ella no marcado como "faltó".
+    # (No se exige ASISTIO: si el admin no pasó lista, nadie podría responder.)
+    inscripcion = await _inscripcion_de_mi_familia(db, usuario_actual, actividad_id, (EstadoInscripcion.CONFIRMADA,))
+    if inscripcion is None or all(p.asistencia == EstadoAsistencia.FALTO for p in inscripcion.participantes):
+        raise HTTPException(status_code=403, detail="Solo pueden responder quienes participaron en la actividad")
+
+    existe = await db.scalar(select(EncuestaActividad).where(
         EncuestaActividad.actividad_id == actividad_id,
-        EncuestaActividad.usuario_id == usuario_actual.id
-    )
-    existe = await db.scalar(stmt)
-    
-    # Si ya la respondió anteriormente, retornamos el registro guardado sin tirar error 400
+        EncuestaActividad.usuario_id == usuario_actual.id,
+    ))
     if existe:
         return existe
 
-    # 3. Guardar en base de datos si es nueva
     nueva_encuesta = EncuestaActividad(
         usuario_id=usuario_actual.id,
         actividad_id=actividad_id,
         experiencia_general=encuesta.experiencia_general,
         utilidad_valor=encuesta.utilidad_valor,
         facilidad_participacion=encuesta.facilidad_participacion,
-        comentarios=encuesta.comentarios
+        comentarios=encuesta.comentarios,
     )
     db.add(nueva_encuesta)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return await db.scalar(select(EncuestaActividad).where(
+            EncuestaActividad.actividad_id == actividad_id,
+            EncuestaActividad.usuario_id == usuario_actual.id,
+        ))
     await db.refresh(nueva_encuesta)
-    
     return nueva_encuesta
 
 
@@ -315,6 +339,15 @@ async def estado_encuestas_usuario(
         "encuesta_inicial_respondida": respondio_inicial,
         "encuesta_final_respondida": respondio_final
     }
+
+
+def _celda_csv(valor) -> str:
+    """Evita CSV/formula injection: Excel ejecuta celdas que empiezan con = + - @ (ej. un nombre
+    "=HYPERLINK(...)"). Con un apóstrofo delante se muestran como texto."""
+    texto = "" if valor is None else str(valor)
+    if texto[:1] in ("=", "+", "-", "@", "\t", "\r", "|", "%"):
+        return "'" + texto
+    return texto
 
 
 @router.get("/encuestas/exportar")
@@ -349,12 +382,12 @@ async def exportar_todas_encuestas_csv(
     for enc, nombre_usuario, titulo_actividad in encuestas:
         writer.writerow([
             enc.id,
-            titulo_actividad,
-            nombre_usuario,
-            enc.experiencia_general, 
-            enc.utilidad_valor, 
-            enc.facilidad_participacion, 
-            enc.comentarios if enc.comentarios else "Sin comentarios", 
+            _celda_csv(titulo_actividad),
+            _celda_csv(nombre_usuario),
+            enc.experiencia_general,
+            enc.utilidad_valor,
+            enc.facilidad_participacion,
+            _celda_csv(enc.comentarios) if enc.comentarios else "Sin comentarios",
             enc.creado_en.strftime("%Y-%m-%d %H:%M:%S") if enc.creado_en else ""
         ])
     

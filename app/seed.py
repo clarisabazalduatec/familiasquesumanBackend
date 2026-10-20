@@ -401,11 +401,14 @@ def sembrar_comunidad(db: Session) -> None:
     # Admin
     admin = db.scalar(select(Usuario).where(Usuario.rol == RolUsuario.ADMIN).order_by(Usuario.creado_en))
     if admin is None:
-        # SEED_ADMIN_PASSWORD en el .env si quieres otra; si no, la misma de los usuarios demo.
-        password_admin = os.getenv("SEED_ADMIN_PASSWORD") or PASSWORD_DEMO
+        # El admin NUNCA usa la contraseña demo: es una cuenta con todos los permisos y la
+        # contraseña estaba en el repo. Hay que definir SEED_ADMIN_PASSWORD (y no se imprime).
+        password_admin = os.getenv("SEED_ADMIN_PASSWORD", "")
+        if len(password_admin) < 12:
+            raise SystemExit("Define SEED_ADMIN_PASSWORD (mínimo 12 caracteres) en el .env para crear el admin demo.")
         admin = _usuario_demo(db, "Equipo Familias que Suman", "equipo@demo.familiasquesuman.mx",
                               rol=RolUsuario.ADMIN, password=password_admin)
-        print(f"Admin creado: equipo@demo.familiasquesuman.mx / {password_admin}")
+        print("Admin creado: equipo@demo.familiasquesuman.mx (contraseña: la de SEED_ADMIN_PASSWORD)")
 
     # Categorías de publicaciones
     def cat(nombre: str) -> Categoria:
@@ -572,6 +575,12 @@ def sembrar_comunidad(db: Session) -> None:
 
 
 if __name__ == "__main__":
+    # Los datos demo traen cuentas con contraseña conocida: nunca en producción
+    if settings.es_prod:
+        raise SystemExit("ENTORNO=prod: la semilla de datos demo está deshabilitada en producción.")
+    # Se revisa antes de sembrar nada, para no dejar la base a medias
+    if len(os.getenv("SEED_ADMIN_PASSWORD", "")) < 12:
+        raise SystemExit("Define SEED_ADMIN_PASSWORD (mínimo 12 caracteres) en el .env para crear el admin demo.")
     engine = create_engine(settings.database_url_sync)
     with Session(engine) as db:
         sembrar(db)

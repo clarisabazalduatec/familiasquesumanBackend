@@ -2,6 +2,8 @@
 import uuid
 from datetime import datetime
 
+from urllib.parse import urlsplit
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import (
@@ -18,10 +20,19 @@ from app.almacen import url_publica
 class _Salida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-def _link_mapa(v):
-    if v is not None and not v.startswith(("http://", "https://")):
-        raise ValueError("La ubicación debe ser un link de Google Maps (https://...)")
+def _link_https(v, mensaje="Debe ser un enlace https://"):
+    """Solo enlaces https bien formados. La app los abre con ACTION_VIEW, así que nada de
+    javascript:, intent:, file:, tel:, etc."""
+    if v is None:
+        return v
+    partes = urlsplit(v)
+    if partes.scheme != "https" or not partes.netloc or any(c.isspace() for c in v):
+        raise ValueError(mensaje)
     return v
+
+
+def _link_mapa(v):
+    return _link_https(v, "La ubicación debe ser un link de Google Maps (https://...)")
 
 # ---------- Catálogos ----------
 class CiudadOut(_Salida):
@@ -216,9 +227,15 @@ class ProyectoGuardar(BaseModel):
             return v or None
         return v
 
+    @field_validator("ubicacion")
     @classmethod
     def _es_link(cls, v):
         return _link_mapa(v)
+
+    @field_validator("instagram_url")
+    @classmethod
+    def _es_instagram(cls, v):
+        return _link_https(v, "El Instagram debe ser un enlace completo (https://instagram.com/...)")
 
 class CentroGuardar(BaseModel):
     """Crear (POST) o reemplazar (PUT) un centro del directorio desde el formulario de admin.
@@ -247,7 +264,7 @@ class CentroGuardar(BaseModel):
     necesidades: list[str] = Field(default_factory=list, max_length=30)
 
     @field_validator(
-        "ubicacion", "logo_url", "como_ayudar", "recomendaciones", "telefono", "whatsapp",
+        "ubicacion", "mapa_url", "logo_url", "como_ayudar", "recomendaciones", "telefono", "whatsapp",
         mode="before",
     )
     @classmethod
@@ -257,7 +274,7 @@ class CentroGuardar(BaseModel):
             return v or None
         return v
     
-    @field_validator("ubicacion")
+    @field_validator("ubicacion", "mapa_url")
     @classmethod
     def _es_link(cls, v):
         return _link_mapa(v)
@@ -297,6 +314,7 @@ class ActividadGuardar(BaseModel):
             return v or None
         return v
     
+    @field_validator("ubicacion")
     @classmethod
     def _es_link(cls, v):
         return _link_mapa(v)
@@ -340,7 +358,7 @@ class DonacionGuardar(BaseModel):
     descripcion_corta: str = Field(min_length=1, max_length=300)
     modalidad: ModalidadDonacion = ModalidadDonacion.CAMPANA
     ubicacion: str | None = Field(default=None, max_length=200)
-    organizacion_nombre: str | None = None
+    organizacion_nombre: str | None = Field(default=None, max_length=200)
     ciudad_id: int | None = None  # None = Monterrey (ID 1)
     categoria_id: int | None = None
     meta: float | None = Field(default=None, ge=0)
@@ -364,6 +382,7 @@ class DonacionGuardar(BaseModel):
             return v or None
         return v
     
+    @field_validator("ubicacion")
     @classmethod
     def _es_link(cls, v):
         return _link_mapa(v)

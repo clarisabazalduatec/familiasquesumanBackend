@@ -160,8 +160,10 @@ async def test_rf12_testimonio_con_foto_pendiente(cliente, db):
 
 # RF-13 Encuestas: antes y después, guardadas y ligadas a usuario y actividad
 async def test_rf13_encuestas_guardadas(cliente, db):
-    yo = await crear_usuario(db)
-    actividad = await crear_actividad(db)
+    # Solo responde quien se inscribió; la final, cuando la actividad ya terminó
+    familia, (yo,), _ = await crear_familia(db)
+    actividad = await crear_actividad(db, inicia_en=en_horas(-5))
+    await inscribir_directo(db, actividad, familia, [yo])
 
     await cliente.post(f"/actividades/{actividad.id}/encuesta-inicial", headers=auth(yo),
                        json={"motivos": ["Convivir"], "expectativas": ["Aprender"]})
@@ -171,6 +173,18 @@ async def test_rf13_encuestas_guardadas(cliente, db):
     for modelo in (EncuestaInicialActividad, EncuestaActividad):
         e = await db.scalar(select(modelo))
         assert (e.usuario_id, e.actividad_id) == (yo.id, actividad.id)
+
+
+async def test_rf13_encuestas_solo_participantes(cliente, db):
+    ajeno = await crear_usuario(db, "Ajeno")
+    actividad = await crear_actividad(db, inicia_en=en_horas(-5))
+    r1 = await cliente.post(f"/actividades/{actividad.id}/encuesta-inicial", headers=auth(ajeno),
+                            json={"motivos": ["x"], "expectativas": []})
+    r2 = await cliente.post(f"/actividades/{actividad.id}/encuesta", headers=auth(ajeno),
+                            json={"experiencia_general": 5, "utilidad_valor": 4, "facilidad_participacion": 5})
+    r3 = await cliente.post(f"/actividades/{actividad.id}/encuesta", headers=auth(ajeno),
+                            json={"experiencia_general": 9, "utilidad_valor": 4, "facilidad_participacion": 5})
+    assert (r1.status_code, r2.status_code, r3.status_code) == (403, 403, 422)
 
 
 # RF-14 Insignias: una por cada actividad ya realizada

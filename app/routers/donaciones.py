@@ -13,7 +13,8 @@ from app.models import (
 )
 from app.routers._comun import Paginacion, _claves_validas, obtener_o_404
 from app.schemas_catalogo import DonacionDetalle, DonacionGuardar, DonacionResumen
-from app.security import requiere_admin
+from app.models import RolUsuario
+from app.security import obtener_usuario_opcional, requiere_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/donaciones", tags=["donaciones"])
@@ -61,15 +62,20 @@ async def listar_donaciones(
     modalidad: ModalidadDonacion | None = Query(None),
     categoria_id: int | None = None,
     ciudad_id: int | None = None,
-    incluir_desactivadas: bool = Query(False),
+    incluir_desactivadas: bool = Query(False, description="Solo tiene efecto para administradores"),
     pag: Paginacion = Depends(),
+    usuario: Usuario | None = Depends(obtener_usuario_opcional),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Donacion).options(
         selectinload(Donacion.ciudad), selectinload(Donacion.categoria),
         selectinload(Donacion.imagenes), selectinload(Donacion.opciones),
     )
-    if not incluir_desactivadas: stmt = stmt.where(Donacion.activa.is_(True))
+    # Las desactivadas solo las ve un admin; a cualquier otro se le ignora el parámetro
+    # (sin error, para no romper la app que hoy lo manda en true por defecto).
+    es_admin = usuario is not None and usuario.rol == RolUsuario.ADMIN
+    if not (incluir_desactivadas and es_admin):
+        stmt = stmt.where(Donacion.activa.is_(True))
     if modalidad: stmt = stmt.where(Donacion.modalidad == modalidad)
     if categoria_id: stmt = stmt.where(Donacion.categoria_id == categoria_id)
     if ciudad_id: stmt = stmt.where(Donacion.ciudad_id == ciudad_id)
@@ -83,12 +89,16 @@ async def listar_donaciones_admin(pag: Paginacion = Depends(), _admin: Usuario =
 
 @router.get("/admin/{donacion_id}", response_model=DonacionDetalle)
 async def detalle_donacion_admin(donacion_id: uuid.UUID, _admin: Usuario = Depends(requiere_admin), db: AsyncSession = Depends(get_db)):
-    return await obtener_o_404(db, Donacion, donacion_id, "Donación")
+    # El admin sí ve las desactivadas (obtener_o_404 las ocultaba y no se podían editar)
+    donacion = await db.get(Donacion, donacion_id)
+    if donacion is None:
+        raise HTTPException(status_code=404, detail="Donación no encontrada")
+    return donacion
 
 @router.get("/{donacion_id}", response_model=DonacionDetalle)
 async def detalle_donacion(donacion_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    # Consultamos por ID sin filtrar por estado 'activa'
-    result = await db.execute(select(Donacion).where(Donacion.id == donacion_id))
+    # Público: solo activas, igual que actividades, proyectos y centros. El admin usa /admin/{id}.
+    result = await db.execute(select(Donacion).where(Donacion.id == donacion_id, Donacion.activa.is_(True)))
     donacion = result.scalar_one_or_none()
 
     if not donacion:
@@ -238,16 +248,19 @@ async def actualizar_donacion(
 
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error al actualizar la donación {donacion_id}: {e}", exc_info=True)
         if isinstance(e, HTTPException):
             raise e
+        # El detalle va al log, NO al cliente (antes se mandaba str(e): SQL, tablas, rutas)
+        logger.exception("Error al actualizar la donación %s", donacion_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno al actualizar la donación: {str(e)}"
+            detail="No se pudo actualizar la donación. Intenta de nuevo."
         )
 
 @router.delete("/{donacion_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_donacion(donacion_id: uuid.UUID, _admin: Usuario = Depends(requiere_admin), db: AsyncSession = Depends(get_db)):
-    donacion = await obtener_o_404(db, Donacion, donacion_id, "Donación")
+    donacion = await db.get(Donacion, donacion_id)  # también se pueden borrar las desactivadas
+    if donacion is None:
+        raise HTTPException(status_code=404, detail="Donación no encontrada")
     await db.delete(donacion)
     await db.commit()

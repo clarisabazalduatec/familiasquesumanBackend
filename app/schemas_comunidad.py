@@ -5,7 +5,8 @@ from app.models.enums import EstadoPublicacion, TipoPublicacion
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.almacen import url_publica
 
-from app.schemas_catalogo import CategoriaOut, CiudadOut, _link_mapa
+from app.almacen import CLAVE_RE
+from app.schemas_catalogo import CategoriaOut, CiudadOut, _link_https, _link_mapa
 
 ## base comun
 
@@ -71,6 +72,24 @@ class AvisoOficialCrear(_Entrada):
     imagenes: list[str] = Field(default_factory=list, max_length=10)
     documento_url: str | None = Field(default=None, max_length=500)
     documento_nombre: str | None = Field(default=None, max_length=255)
+
+    @field_validator("documento_url", mode="before")
+    @classmethod
+    def _vacio_es_null(cls, v):
+        return (v.strip() or None) if isinstance(v, str) else v
+
+    @field_validator("documento_url")
+    @classmethod
+    def _documento(cls, v):
+        # Se aceptan: una clave del almacén (abc.jpg o /imagenes/abc.jpg), un archivo viejo de
+        # /media/ o un enlace https. Cualquier otra cosa (javascript:, intent:, file:...) se rechaza.
+        if v is None:
+            return v
+        if CLAVE_RE.match(v.removeprefix("/imagenes/")):
+            return v
+        if v.startswith("/media/") and ".." not in v:
+            return v
+        return _link_https(v, "El documento debe ser un enlace https://")
 
 
 ## consultar publicaciones

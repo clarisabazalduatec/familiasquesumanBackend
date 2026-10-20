@@ -1,0 +1,35 @@
+# Revisión de dependencias e imagen en cada push/PR y una vez por semana
+name: seguridad
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 12 * * 1"   # lunes 6:00 hora de Monterrey
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt --strict
+
+  trivy-imagen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t familias-api:ci .
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: familias-api:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
