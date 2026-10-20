@@ -9,6 +9,7 @@ from starlette.routing import Match
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
+from app.routers import contacto
 
 from app.database import get_db
 from app.metrics import HTTP_REQUESTS, HTTP_REQUEST_DURATION, HTTP_SERVER_ERRORS
@@ -32,6 +33,7 @@ from app.routers import (
 from app import almacen
 
 app = FastAPI(title="Familias que Suman API")
+app.include_router(contacto.router)
 _metrics_server = None
 
 
@@ -86,6 +88,7 @@ app.include_router(donaciones.router)
 app.include_router(centros.router)
 app.include_router(comunidad.router)
 app.include_router(notificaciones.router)
+
 
 # Imágenes subidas por el admin: /media/<archivo>
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
