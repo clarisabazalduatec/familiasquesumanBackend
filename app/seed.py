@@ -1,12 +1,19 @@
 """Carga los datos de ejemplo (los antiguos mocks de la app) en PostgreSQL.
 
 Uso:  docker compose exec api python -m app.seed
+
+Ubicación de cada cosa (igual que en la base desde la migración a1c7e5b9d3f2):
+  - ciudad    -> FK a ciudades (Monterrey / Hermosillo). Es lo que filtra por la ciudad del perfil.
+  - direccion -> texto ("Parque Central, Puerta Norte").
+  - ubicacion -> link de Google Maps; la app lo muestra como botón "Cómo llegar".
+Las fechas de las actividades son relativas a HOY: siempre hay próximas y concluidas.
 Es idempotente por partes:
   - Catálogo (ciudades, actividades, proyectos, donaciones, centros): solo si no hay ciudades.
   - Comunidad (usuarios demo, publicaciones, avisos, likes y comentarios): solo si no hay
     publicaciones. Así se puede correr en una base que ya tenía el catálogo.
 """
-import secrets
+import os
+from urllib.parse import quote_plus
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -28,8 +35,15 @@ from app.security import hashear_password
 TZ = timezone(timedelta(hours=-6))
 
 
-def dt(mes: int, dia: int, hora: int, minuto: int = 0, anio: int = 2026) -> datetime:
-    return datetime(anio, mes, dia, hora, minuto, tzinfo=TZ)
+def maps(lugar: str) -> str:
+    """Link de Google Maps que busca el lugar (botón "Cómo llegar")."""
+    return "https://www.google.com/maps/search/?api=1&query=" + quote_plus(lugar)
+
+
+def en_dias(dias: int, hora: int, minuto: int = 0) -> datetime:
+    """Fecha relativa a hoy (negativo = ya pasó), a la hora indicada de Monterrey."""
+    base = datetime.now(TZ) + timedelta(days=dias)
+    return base.replace(hour=hora, minute=minuto, second=0, microsecond=0)
 
 
 def imgs(*urls: str) -> list[IniciativaImagen]:
@@ -72,8 +86,8 @@ def sembrar(db: Session) -> None:
     act_utiles = Actividad(
         titulo="Campaña de Donación de Útiles",
         descripcion_corta="Entrega de paquetes escolares a niños de la comunidad.",
-        ubicacion="García, N.L.", ciudad=mty, organizacion=org["fqs"],
-        categoria=c_act["Educación"], inicia_en=dt(10, 10, 9), termina_en=dt(10, 10, 13),
+        direccion="García, N.L.", ubicacion=maps("Plaza Principal García Nuevo León"), ciudad=mty, organizacion=org["fqs"],
+        categoria=c_act["Educación"], inicia_en=en_dias(-9, 9), termina_en=en_dias(-9, 13),
         cupo_total=40,
         acerca_de="Jornada de entrega de útiles y convivencia con las familias inscritas en el programa.",
     )
@@ -81,8 +95,8 @@ def sembrar(db: Session) -> None:
     act_limpieza = Actividad(
         titulo="Jornada Comunitaria de Limpieza",
         descripcion_corta="Limpieza y acondicionamiento del parque comunitario.",
-        ubicacion="Escobedo, N.L.", ciudad=mty, organizacion=org["verde"],
-        categoria=c_act["Medio Ambiente"], inicia_en=dt(10, 12, 10), termina_en=dt(10, 12, 14),
+        direccion="Escobedo, N.L.", ubicacion=maps("Parque Escobedo Nuevo León"), ciudad=mty, organizacion=org["verde"],
+        categoria=c_act["Medio Ambiente"], inicia_en=en_dias(-7, 10), termina_en=en_dias(-7, 14),
         cupo_total=30,
         acerca_de="Recolección de residuos y pintura de bancas en el parque público.",
     )
@@ -93,8 +107,8 @@ def sembrar(db: Session) -> None:
         Actividad(
             titulo="Reforestación Parque Central",
             descripcion_corta="Únete a la jornada de plantación de árboles nativos.",
-            ubicacion="Parque Central, Puerta Norte", ciudad=mty, organizacion=org["verde"],
-            categoria=c_act["Medio Ambiente"], inicia_en=dt(10, 24, 9), termina_en=dt(10, 24, 13),
+            direccion="Parque Central, Puerta Norte", ubicacion=maps("Parque Fundidora Monterrey"), ciudad=mty, organizacion=org["verde"],
+            categoria=c_act["Medio Ambiente"], inicia_en=en_dias(5, 9), termina_en=en_dias(5, 13),
             cupo_total=50,
             acerca_de=("Únete a nosotros para restaurar el pulmón de nuestra ciudad. Durante esta "
                        "jornada, las familias plantarán árboles autóctonos y aprenderán sobre la "
@@ -103,8 +117,8 @@ def sembrar(db: Session) -> None:
         Actividad(
             titulo="Lectura para Niños",
             descripcion_corta="Apoya como voluntario en el círculo de lectura comunitaria.",
-            ubicacion="Biblioteca Norte", ciudad=mty, organizacion=org["lectores"],
-            categoria=c_act["Educación"], inicia_en=dt(10, 25, 10), termina_en=dt(10, 25, 12),
+            direccion="Biblioteca Norte", ubicacion=maps("Biblioteca Central Monterrey"), ciudad=mty, organizacion=org["lectores"],
+            categoria=c_act["Educación"], inicia_en=en_dias(6, 10), termina_en=en_dias(6, 12),
             cupo_total=20,
             acerca_de=("Apoya como voluntario leyendo cuentos a niños de la comunidad. Ayudaremos a "
                        "fomentar el hábito de la lectura y la imaginación en los más pequeños."),
@@ -112,8 +126,8 @@ def sembrar(db: Session) -> None:
         Actividad(
             titulo="Comedor Solidario",
             descripcion_corta="Colabora en la preparación y entrega de alimentos a quienes más lo necesitan.",
-            ubicacion="Centro Comunitario", ciudad=mty, organizacion=org["manos"],
-            categoria=c_act["Apoyo Social"], inicia_en=dt(10, 28, 16), termina_en=dt(10, 28, 19),
+            direccion="Centro Comunitario", ubicacion=maps("Centro Comunitario Independencia Monterrey"), ciudad=mty, organizacion=org["manos"],
+            categoria=c_act["Apoyo Social"], inicia_en=en_dias(9, 16), termina_en=en_dias(9, 19),
             cupo_total=30,
             acerca_de=("Colabora en la preparación y entrega de alimentos a quienes más lo necesitan "
                        "en nuestra comunidad. Toda ayuda es bienvenida para servir cenas calientes."),
@@ -125,7 +139,7 @@ def sembrar(db: Session) -> None:
         Proyecto(
             titulo="Trazo... Escribiendo una nueva historia",
             descripcion_corta="Voluntariado que visita a mujeres en el penal de Escobedo.",
-            ubicacion="Monterrey", ciudad=mty, organizacion=org["fqs"],
+            direccion="Penal de Escobedo, Escobedo, N.L.", ciudad=mty, organizacion=org["fqs"],
             estado=EstadoProyecto.ACTIVO, beneficiarios="25 Mujeres",
             acerca_de=("Trazo es un voluntariado que nace de la Asociación Renace, desde hace más de 2 "
                        "años lleva pláticas de desarrollo humano y cursos de acuarela y caligrafía a "
@@ -157,7 +171,7 @@ def sembrar(db: Session) -> None:
         Proyecto(
             titulo="Voluntariado DIF Te Acompaña",
             descripcion_corta="Acompañar a personas vulnerables.",
-            ubicacion="San Pedro Garza García", ciudad=mty, organizacion=org["fqs"],
+            direccion="San Pedro Garza García", ubicacion=maps("DIF San Pedro Garza García"), ciudad=mty, organizacion=org["fqs"],
             estado=EstadoProyecto.ACTIVO, beneficiarios="200 adultos mayores",
             acerca_de=("El voluntariado existe desde hace varios años y se busca apoyar a personas "
                        "vulnerables con una visita o ayuda con alimentos, medicinas o acompañamiento."),
@@ -182,7 +196,7 @@ def sembrar(db: Session) -> None:
             descripcion_corta=("Destellos de Luz A.B.P. cuenta con más de 29 años de experiencia brindando "
                                "atención oftalmológica integral y programas educativos que impulsan la autonomía "
                                "y calidad de vida de personas con discapacidad visual."),
-            ubicacion="Monterrey, N.L.", ciudad=mty, organizacion=org["fqs"],
+            direccion="Monterrey, N.L.", ciudad=mty, organizacion=org["fqs"],
             modalidad=ModalidadDonacion.CAMPANA, categoria=c_don["Salud"],
             meta=Decimal("35700"), recaudado=Decimal("14000"), whatsapp="8180924504",
             descripcion_larga=(
@@ -207,10 +221,10 @@ def sembrar(db: Session) -> None:
             titulo="Suma a su Mesa",
             descripcion_corta=("Recolección de alimentos y productos de limpieza para el Asilo de Ancianos "
                                "Morada del Anciano Desvalido de Cadereyta. Se sirven 6,900 servicios de alimentación al mes."),
-            ubicacion="Monterrey, N.L.", ciudad=mty, organizacion=org["fqs"],
+            direccion="Calle Cóndor 1001, Fracc. Azhara (y 2 puntos más)", ubicacion=maps("Calle Cóndor 1001 Monterrey"), ciudad=mty, organizacion=org["sanjose"],
             modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Alimentos"],
             meta=Decimal("100"), recaudado=Decimal("25"), whatsapp="8114707350",
-            fecha_limite=datetime(2026, 10, 30),
+            fecha_limite=en_dias(30, 23, 59),
             condiciones_recepcion="Puntos de acopio: 1) Calle Cóndor 1001, Fracc. Azhara. 2) Río Amazonas 327, Del Valle, San Pedro. 3) Fuego 45, Col. Olinca.",
             descripcion_larga=(
                 "Recolección de alimentos no perecederos y productos de limpieza para el Asilo con Adultos Mayores en Cadereyta.\n\n"
@@ -234,10 +248,10 @@ def sembrar(db: Session) -> None:
             titulo="Acompañamiento a Adultos Mayores",
             descripcion_corta=("Asociación civil con 81 años de labor que brinda atención integral y permanente "
                                "a 104 adultos mayores en situación vulnerable."),
-            ubicacion="Hidalgo Sur #637, Zona Centro, Saltillo / Monterrey", ciudad=mty, organizacion=org["sanjose"],
-            modalidad=ModalidadDonacion.TIEMPO, categoria=c_don["Salud"],
+            direccion="Hidalgo Sur #637, Zona Centro, Saltillo / Monterrey", ubicacion=maps("Hidalgo Sur 637 Zona Centro Monterrey"), ciudad=mty, organizacion=org["fqs"],
+            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Salud"],
             meta=Decimal("30"), recaudado=Decimal("12"), whatsapp="8110809078",
-            fecha_limite=datetime(2026, 11, 30), horario="Sábados de 10:00 AM a 1:00 PM",
+            fecha_limite=en_dias(60, 23, 59), horario="Sábados de 10:00 AM a 1:00 PM",
             descripcion_larga=(
                 "Asociación civil con 81 años de labor que brinda atención integral y permanente a 104 adultos mayores "
                 "en situación vulnerable, muchos de ellos sin familia, pensión ni servicios de salud."
@@ -245,6 +259,48 @@ def sembrar(db: Session) -> None:
             imagenes=imgs("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTS7d1X_t0oN_Z0twQrE4mFovZHz-pUsdlBW--V7YXBQHuK-z7a5BYOokY&s=10"),
         ),
     ])
+
+    # ---------- Hermosillo ----------
+    # La app muestra solo lo de la ciudad del perfil: sin esto, un usuario de Hermosillo vería todo vacío.
+    db.add_all([
+        Actividad(
+            titulo="Limpieza del Cerro de la Campana",
+            descripcion_corta="Recolección de basura en los senderos del cerro, en familia.",
+            direccion="Cerro de la Campana, acceso principal", ubicacion=maps("Cerro de la Campana Hermosillo"),
+            ciudad=hmo, organizacion=org["verde"], categoria=c_act["Medio Ambiente"],
+            inicia_en=en_dias(7, 7), termina_en=en_dias(7, 10), cupo_total=35,
+            acerca_de=("Subiremos temprano para evitar el calor. Se entregan guantes y bolsas; trae agua, "
+                       "gorra y bloqueador. Ideal para familias con niños mayores de 8 años."),
+        ),
+        Actividad(
+            titulo="Taller de Lectura en Familia",
+            descripcion_corta="Cuentacuentos y juegos de lectura para niños y papás.",
+            direccion="Biblioteca Pública, Col. Centro", ubicacion=maps("Biblioteca Pública Hermosillo Centro"),
+            ciudad=hmo, organizacion=org["lectores"], categoria=c_act["Educación"],
+            inicia_en=en_dias(12, 17), termina_en=en_dias(12, 19), cupo_total=20,
+            acerca_de="Lectura en voz alta, manualidades y préstamo de libros para llevar a casa.",
+        ),
+        Proyecto(
+            titulo="Acompañamiento a Adultos Mayores Hermosillo",
+            descripcion_corta="Visitas quincenales en familia a adultos mayores que viven solos.",
+            direccion="Col. Centro, Hermosillo, Son.", ubicacion=maps("DIF Sonora Hermosillo"),
+            ciudad=hmo, organizacion=org["fqs"], estado=EstadoProyecto.ACTIVO,
+            beneficiarios="60 adultos mayores",
+            acerca_de="Programa de visitas y acompañamiento coordinado con el DIF estatal.",
+            como_ayudar="Inscribe a tu familia y te asignamos a una persona para visitar.",
+        ),
+    ])
+    db.add(CentroVisiteo(
+        tipo=TipoCentro.CASA_HOGAR,
+        nombre="Casa Hogar Rayito de Luz Hermosillo",
+        descripcion_corta="Casa hogar que atiende a 30 niñas y niños de 4 a 12 años.",
+        informacion_general="Brinda hogar, alimentación y apoyo escolar a niñas y niños sin cuidado parental.",
+        direccion="Col. Centro, Hermosillo, Son.", ciudad=hmo,
+        ubicacion=maps("Casa Hogar Hermosillo Centro"),
+        como_ayudar="Donación de útiles y ropa; tardes de juegos y tareas con los niños.",
+        recomendaciones="Agenda tu visita con una semana de anticipación.",
+        necesidades=[CentroNecesidad(orden=0, descripcion="Útiles escolares, ropa infantil y leche")],
+    ))
 
     # ---------- Directorio de visiteo ----------
     db.add(CentroVisiteo(
@@ -255,7 +311,7 @@ def sembrar(db: Session) -> None:
                              "Se les proporciona una vida digna. Se les ofrece refugio, alimentación, "
                              "atención integral y compañía."),
         direccion="Blvd Jose Maria Gonzalez #1000, Cadereyta", ciudad=mty,
-        mapa_url="https://www.google.com/maps/search/?api=1&query=Blvd+Jose+Maria+Gonzalez+1000+Cadereyta+Nuevo+Leon",
+        ubicacion="https://www.google.com/maps/search/?api=1&query=Blvd+Jose+Maria+Gonzalez+1000+Cadereyta+Nuevo+Leon",
         como_ayudar="Donación en especie. Visita a los ancianos para convivir y platicar.",
         recomendaciones="Hablar con anticipación para ver que actividades se recomiendan y en que horario.",
         telefono="8282844311", whatsapp="528282844311",
@@ -281,13 +337,13 @@ PASSWORD_DEMO = "demo12345"  # solo para la base local de desarrollo
 
 
 def _usuario_demo(db: Session, nombre: str, email: str, rol: RolUsuario = RolUsuario.USUARIO,
-                 password: str = PASSWORD_DEMO) -> Usuario:
-    """Regresa el usuario con ese correo; si no existe, lo crea."""
+                 password: str = PASSWORD_DEMO, ciudad: str = "Monterrey") -> Usuario:
+    """Regresa el usuario con ese correo; si no existe, lo crea (en esa ciudad)."""
     existente = db.scalar(select(Usuario).where(Usuario.email == email))
     if existente:
         return existente
     u = Usuario(nombre=nombre, email=email, password_hash=hashear_password(password),
-                ubicacion="Monterrey", rol=rol)
+                ciudad=db.scalar(select(Ciudad).where(Ciudad.nombre == ciudad)), rol=rol)
     db.add(u)
     db.flush()
     return u
@@ -307,7 +363,7 @@ def sembrar_comunidad(db: Session) -> None:
     mariana = _usuario_demo(db, "Mariana López", "mariana@demo.familiasquesuman.mx")
     carlos = _usuario_demo(db, "Carlos Treviño", "carlos@demo.familiasquesuman.mx")
     sofia = _usuario_demo(db, "Sofía Garza", "sofia@demo.familiasquesuman.mx")
-    jorge = _usuario_demo(db, "Jorge Medina", "jorge@demo.familiasquesuman.mx")
+    jorge = _usuario_demo(db, "Jorge Medina", "jorge@demo.familiasquesuman.mx", ciudad="Hermosillo")
 
     # Crear familia para Mariana y asociar inscripciones con asistencia para probar encuestas
     familia_mariana = db.scalar(select(Familia).where(Familia.nombre == "Familia López"))
@@ -345,8 +401,11 @@ def sembrar_comunidad(db: Session) -> None:
     # Admin
     admin = db.scalar(select(Usuario).where(Usuario.rol == RolUsuario.ADMIN).order_by(Usuario.creado_en))
     if admin is None:
+        # SEED_ADMIN_PASSWORD en el .env si quieres otra; si no, la misma de los usuarios demo.
+        password_admin = os.getenv("SEED_ADMIN_PASSWORD") or PASSWORD_DEMO
         admin = _usuario_demo(db, "Equipo Familias que Suman", "equipo@demo.familiasquesuman.mx",
-                                rol=RolUsuario.ADMIN, password=secrets.token_urlsafe(24))
+                              rol=RolUsuario.ADMIN, password=password_admin)
+        print(f"Admin creado: equipo@demo.familiasquesuman.mx / {password_admin}")
 
     # Categorías de publicaciones
     def cat(nombre: str) -> Categoria:
@@ -366,53 +425,53 @@ def sembrar_comunidad(db: Session) -> None:
 
     # ---------- Publicaciones de la comunidad ----------
     reforestacion = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=mariana.id, estado=EstadoPublicacion.APROBADA,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=mariana.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
         titulo="Nuestra primera reforestación en familia",
         contenido=("El sábado fuimos con los niños a plantar árboles al Parque Central. Plantamos 12 "
                    "encinos y aprendimos a cuidarlos. Los niños ya quieren regresar a ver cómo crecen. "
                    "¡Gracias a Fundación Verde Vivo por organizar!"),
-        categoria=cat("Medio Ambiente"), ubicacion="Parque Central, Monterrey",
+        categoria=cat("Medio Ambiente"), direccion="Parque Central, Monterrey",
         creado_en=hace(6), publicada_en=hace(6), revisado_por=admin.id, revisado_en=hace(6),
         imagenes=fotos(unsplash("photo-1542601906990-b4d3fb778b09"),
                        unsplash("photo-1466692476868-aef1dfb1e735")),
     )
     comedor = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=carlos.id, estado=EstadoPublicacion.APROBADA,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=carlos.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
         titulo="Servimos 150 cenas en el Comedor Solidario",
         contenido=("Ayer apoyamos en el Comedor Solidario del Barrio Sur. Entre todos los voluntarios "
                    "preparamos y servimos 150 cenas calientes. Si pueden, vayan: siempre hace falta "
                    "una mano para lavar y servir."),
-        categoria=cat("Comedor Solidario"), ubicacion="Centro Comunitario Barrio Sur",
+        categoria=cat("Comedor Solidario"), direccion="Centro Comunitario Barrio Sur",
         creado_en=hace(4), publicada_en=hace(4), revisado_por=admin.id, revisado_en=hace(4),
         imagenes=fotos(unsplash("photo-1488521787991-ed7bbaae773c")),
     )
     lectura = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=sofia.id, estado=EstadoPublicacion.APROBADA,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=sofia.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
         titulo="Tarde de cuentos en la Biblioteca Norte",
         contenido=("Mi hija de 8 años leyó en voz alta para niños más pequeños. Fue muy bonito verla "
                    "tan segura. Recomiendo mucho la actividad de Lectura para Niños para ir en familia."),
-        categoria=cat("Educación"), ubicacion="Biblioteca Norte",
+        categoria=cat("Educación"), direccion="Biblioteca Norte",
         creado_en=hace(3), publicada_en=hace(3), revisado_por=admin.id, revisado_en=hace(3),
         imagenes=fotos(unsplash("photo-1503676260728-1c00da094a0b")),
     )
     asilo = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, estado=EstadoPublicacion.APROBADA,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, ciudad_id=jorge.ciudad_id, estado=EstadoPublicacion.APROBADA,
         titulo="Visita a la Morada del Anciano en Cadereyta",
         contenido=("Llevamos despensa y pasamos la tarde platicando con los abuelitos. Nos contaron "
                    "historias increíbles. Ellos necesitan sobre todo compañía; una visita les cambia el día."),
-        categoria=cat("Voluntariado"), ubicacion="Cadereyta, N.L.",
+        categoria=cat("Voluntariado"), direccion="Cadereyta, N.L.",
         creado_en=hace(2), publicada_en=hace(2), revisado_por=admin.id, revisado_en=hace(2),
     )
     salud = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=mariana.id, estado=EstadoPublicacion.APROBADA,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=mariana.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
         titulo="Jornada de salud gratuita en la colonia",
         contenido=("Este domingo habrá toma de presión, glucosa y vacunas en el kiosco de la colonia "
                    "Independencia, de 9 a 13 h. Corran la voz con los vecinos."),
-        categoria=cat("Salud"), ubicacion="Col. Independencia, Monterrey",
+        categoria=cat("Salud"), direccion="Col. Independencia, Monterrey",
         creado_en=hace(1, 5), publicada_en=hace(1, 5), revisado_por=admin.id, revisado_en=hace(1, 5),
     )
     colecta = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=carlos.id, estado=EstadoPublicacion.APROBADA,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=carlos.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.APROBADA,
         titulo=None,
         contenido=("¿Alguien sabe dónde reciben juguetes usados en buen estado? Tenemos varios que "
                    "ya no usan mis hijos y nos gustaría donarlos antes de Navidad."),
@@ -421,21 +480,21 @@ def sembrar_comunidad(db: Session) -> None:
 
     # ---------- Para probar moderación ----------
     pendiente1 = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=sofia.id, estado=EstadoPublicacion.PENDIENTE,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=sofia.id, ciudad_id=mariana.ciudad_id, estado=EstadoPublicacion.PENDIENTE,
         titulo="Recolecta de útiles escolares",
         contenido=("Estamos juntando cuadernos, colores y mochilas para la escuela San Bernabé. "
                    "Si alguien quiere sumarse, el punto de acopio es la tienda de la esquina de Aztlán."),
-        categoria=cat("Educación"), ubicacion="Col. San Bernabé",
+        categoria=cat("Educación"), direccion="Col. San Bernabé",
         creado_en=hace(0, 3),
     )
     pendiente2 = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, estado=EstadoPublicacion.PENDIENTE,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, ciudad_id=jorge.ciudad_id, estado=EstadoPublicacion.PENDIENTE,
         titulo="Limpieza del río Santa Catarina",
         contenido="Propongo organizar una limpieza del río el próximo mes. ¿Quién se apunta?",
         categoria=cat("Medio Ambiente"), creado_en=hace(0, 1),
     )
     rechazada = Publicacion(
-        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, estado=EstadoPublicacion.RECHAZADA,
+        tipo=TipoPublicacion.COMUNIDAD, autor_id=jorge.id, ciudad_id=jorge.ciudad_id, estado=EstadoPublicacion.RECHAZADA,
         titulo="Vendo bicicleta",
         contenido="Vendo bicicleta rodada 26 en buen estado, interesados mándenme mensaje.",
         motivo_rechazo="La comunidad es solo para voluntariado y ayuda; no se permiten ventas.",
