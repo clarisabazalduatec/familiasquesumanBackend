@@ -27,10 +27,12 @@ from app import models  # noqa: F401  registra todas las tablas en Base.metadata
 from app.models import Ciudad
 
 # ---------- URL de la base de pruebas ----------
-_url_real = make_url(settings.database_url)
+# Se usa el DUEÑO de las tablas (DATABASE_URL_SYNC, el mismo de Alembic): el rol de la API
+# (familias_app) no puede crear la base de pruebas ni sus tablas.
+_url_real = make_url(settings.database_url_sync)
 # Ojo: str(url) esconde la contraseña ("***"); por eso se trabaja con el objeto URL directo
 URL_PRUEBAS = make_url(os.environ["TEST_DATABASE_URL"]) if os.getenv("TEST_DATABASE_URL") \
-    else _url_real.set(database="familias_test")
+    else _url_real.set(drivername="postgresql+asyncpg", database="familias_test")
 URL_PRUEBAS_SYNC = URL_PRUEBAS.set(drivername="postgresql+psycopg2")
 
 if URL_PRUEBAS.database == _url_real.database:
