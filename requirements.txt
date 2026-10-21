@@ -21,4 +21,4 @@ boto3==1.43.115
 # Rate limiting
 slowapi==0.1.10
 # Re-codificar imágenes (quita EXIF/GPS)
-Pillow==12.3.0
+Pillow==13.0.0
