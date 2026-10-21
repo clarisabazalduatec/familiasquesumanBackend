@@ -194,7 +194,7 @@ def sembrar(db: Session) -> None:
             descripcion_corta=("Destellos de Luz A.B.P. cuenta con más de 29 años de experiencia brindando "
                                "atención oftalmológica integral y programas educativos que impulsan la autonomía "
                                "y calidad de vida de personas con discapacidad visual."),
-            direccion="Monterrey, N.L.", ciudad=mty, organizacion=org["fqs"],
+            direccion="Monterrey, N.L.", ciudad=mty, organizacion=org["Destellos de Luz A.B.P."],
             modalidad=ModalidadDonacion.CAMPANA, categoria=c_don["Salud"],
             meta=Decimal("35700"), recaudado=Decimal("14000"), whatsapp="8180924504",
             descripcion_larga=(
@@ -214,14 +214,57 @@ def sembrar(db: Session) -> None:
             ],
         ),
 
-        # 2. En Especie
+        # 2. Tapitas que Suman (Tiempo)
+        Donacion(
+            titulo="Tapitas que Suman",
+            descripcion_corta="Recolección de tapitas de plástico para reciclaje",
+            direccion="Monterrey", ubicacion=maps("Monterrey"), ciudad=mty, organizacion=org["fqs"],
+            modalidad=ModalidadDonacion.TIEMPO, categoria=c_don["Salud"],
+            whatsapp="528111069946",
+            fecha_limite=en_dias(60, 23, 59),
+            descripcion_larga=(
+                "Junta en casa todas las tapitas de plástico para reciclaje y ayuda a la alimentación y el medio ambiente.\n\n"
+                "¿Cómo ayudar?\n"
+                "Ayúdanos a difundir entre familiares y amigos e invítalos a juntar todas las tapitas de botellas de plástico. "
+                "Se pueden reciclar, se reutiliza ese plástico y con ese dinero recaudado podemos ayudar a niños con cáncer y a sus familias."
+            ),
+            imagenes=imgs("https://base44.app/api/apps/69ed00f78e8b6884c29526e1/files/mp/public/69ed00f78e8b6884c29526e1/b531bb3cb_exec-ef19f5dc-e564-435f-bfb2-939cf959dddd.png"),
+        ),
+
+        # 3. VIFAC (Especie)
+        Donacion(
+            titulo="VIFAC",
+            descripcion_corta="Residencia donde atienden y capacitan a mujeres en estado vulnerable durante su embarazo.",
+            direccion="Gral Ignacio Zaragoza 625 Sur, La Pastora, 67140 Guadalupe, N.L., Guadalupe", 
+            ubicacion=maps("Gral Ignacio Zaragoza 625 Sur La Pastora Guadalupe"), ciudad=mty, organizacion=org["VIFAC"],
+            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Salud"],
+            whatsapp="8110809078",
+            condiciones_recepcion="Comunicarse para hacer la entrega de las donaciones. Entrega en el centro.",
+            descripcion_larga=(
+                "Residencia donde atienden y capacitan a mujeres en estado vulnerable durante su embarazo. "
+                "Ofrecen casa y alimento durante su embarazo y unos meses posteriores a al nacimiento de su bebé."
+            ),
+            imagenes=imgs("https://media.base44.com/images/public/69ed00f78e8b6884c29526e1/01cfd5a19_230870A6-5ACE-4EDD-AC42-6D7787130346.png"),
+            opciones=[
+                DonacionOpcion(titulo="Ropa", monto=Decimal("0")),
+                DonacionOpcion(titulo="Alimentos", monto=Decimal("0")),
+                DonacionOpcion(titulo="Higiene", monto=Decimal("0")),
+            ],
+            etiquetas=[
+                *etiquetas(GrupoEtiqueta.ARTICULO, ["Ropa", "Alimentos", "Higiene"]),
+                *etiquetas(GrupoEtiqueta.DESTINATARIO, ["Adultos"]),
+                *etiquetas(GrupoEtiqueta.CONDICION, ["Nuevo", "Usado en buen estado"]),
+            ],
+        ),
+
+        # 4. Suma a su Mesa (Tiempo)
         Donacion(
             titulo="Suma a su Mesa",
             descripcion_corta=("Recolección de alimentos y productos de limpieza para el Asilo de Ancianos "
                                "Morada del Anciano Desvalido de Cadereyta. Se sirven 6,900 servicios de alimentación al mes."),
-            direccion="Calle Cóndor 1001, Fracc. Azhara (y 2 puntos más)", ubicacion=maps("Calle Cóndor 1001 Monterrey"), ciudad=mty, organizacion=org["sanjose"],
-            modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Alimentos"],
-            meta=Decimal("100"), recaudado=Decimal("25"), whatsapp="8114707350",
+            direccion="Calle Cóndor 1001, Fracc. Azhara (y 2 puntos más)", ubicacion=maps("Calle Cóndor 1001 Monterrey"), ciudad=mty, organizacion=org["fqs"],
+            modalidad=ModalidadDonacion.TIEMPO, categoria=c_don["Alimentos"],
+            whatsapp="8114707350",
             fecha_limite=en_dias(30, 23, 59),
             condiciones_recepcion="Puntos de acopio: 1) Calle Cóndor 1001, Fracc. Azhara. 2) Río Amazonas 327, Del Valle, San Pedro. 3) Fuego 45, Col. Olinca.",
             descripcion_larga=(
@@ -241,20 +284,36 @@ def sembrar(db: Session) -> None:
             ],
         ),
 
-        # 3. Tiempo / Voluntariado
+        # 5. Asistencia y Ropero del Pobre AC (Especie)
         Donacion(
-            titulo="Acompañamiento a Adultos Mayores",
+            titulo="Asistencia y Ropero del Pobre AC",
             descripcion_corta=("Asociación civil con 81 años de labor que brinda atención integral y permanente "
                                "a 104 adultos mayores en situación vulnerable."),
-            direccion="Hidalgo Sur #637, Zona Centro, Saltillo / Monterrey", ubicacion=maps("Hidalgo Sur 637 Zona Centro Monterrey"), ciudad=mty, organizacion=org["fqs"],
+            direccion="Hidalgo Sur #637, Zona Centro, Saltillo, Coahuila, Monterrey", 
+            ubicacion=maps("Hidalgo Sur 637 Zona Centro Saltillo"), ciudad=mty, organizacion=org["Asilo de Ancianos"],
             modalidad=ModalidadDonacion.ESPECIE, categoria=c_don["Salud"],
-            meta=Decimal("30"), recaudado=Decimal("12"), whatsapp="8110809078",
-            fecha_limite=en_dias(60, 23, 59), horario="Sábados de 10:00 AM a 1:00 PM",
+            whatsapp="8110809078",
+            condiciones_recepcion="Contactarse al Whatsapp y coordinar la recolección de donaciones en su domicilio. Métodos de entrega: Recogen donaciones.",
             descripcion_larga=(
                 "Asociación civil con 81 años de labor que brinda atención integral y permanente a 104 adultos mayores "
-                "en situación vulnerable, muchos de ellos sin familia, pensión ni servicios de salud."
+                "en situación vulnerable, muchos de ellos sin familia, pensión ni servicios de salud. También ofrece techo y alimentación a 45 jóvenes en rehabilitación por adicciones."
             ),
             imagenes=imgs("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTS7d1X_t0oN_Z0twQrE4mFovZHz-pUsdlBW--V7YXBQHuK-z7a5BYOokY&s=10"),
+            opciones=[
+                DonacionOpcion(titulo="Ropa", monto=Decimal("0")),
+                DonacionOpcion(titulo="Alimentos", monto=Decimal("0")),
+                DonacionOpcion(titulo="Higiene", monto=Decimal("0")),
+                DonacionOpcion(titulo="Sillas de ruedas", monto=Decimal("0")),
+                DonacionOpcion(titulo="Camas hospitalarias", monto=Decimal("0")),
+                DonacionOpcion(titulo="Mobiliario", monto=Decimal("0")),
+                DonacionOpcion(titulo="Artículos de cocina", monto=Decimal("0")),
+                DonacionOpcion(titulo="Medicamentos", monto=Decimal("0")),
+            ],
+            etiquetas=[
+                *etiquetas(GrupoEtiqueta.ARTICULO, ["Ropa", "Alimentos", "Higiene", "Sillas de ruedas", "Camas hospitalarias", "Mobiliario", "Artículos de cocina", "Medicamentos"]),
+                *etiquetas(GrupoEtiqueta.DESTINATARIO, ["Adultos", "Adultos mayores"]),
+                *etiquetas(GrupoEtiqueta.CONDICION, ["Usado en buen estado", "Nuevo"]),
+            ],
         ),
     ])
 
